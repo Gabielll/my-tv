@@ -4,17 +4,21 @@ Este documento rastreia o progresso atual no roteiro de construção do software
 
 ## Etapa Atual
 
-**Etapa 2: O Diretor de Programação**
+**Etapa 3: O Consumo On-Demand**
 
 ## Progresso
-
-- [x] **scheduler_ai (Estrutura):** A estrutura inicial do microsserviço foi criada (`scheduler_ai/`, `requirements.txt`, `tests/`).
-- [x] **scheduler_ai (Lógica de DB):** O serviço agora pode se conectar ao PostgreSQL, buscar as regras de agendamento da `channel_master_grid` e os itens de mídia da `media_items`.
-- [x] **scheduler_ai (Motor de Agendamento):** O motor de agendamento (`engine.py`) foi criado e a primeira regra (`series_linear`) foi implementada. O serviço pode agora gerar entradas de EPG e salvar os resultados no banco de dados.
+- [ ] **stream-api (Estrutura):** Criar a estrutura inicial do microsserviço `stream-api` para lidar com as solicitações de streaming.
+- [ ] **FFmpeg (Integração):** Integrar o `ffmpeg` para iniciar dinamicamente os processos de transcodificação e streaming.
+- [ ] **Frontend (Player):** Desenvolver um player de vídeo no frontend para consumir o stream HLS/DASH.
 
 ---
 
 ## Histórico de Conclusões
+
+### Etapa 2: O Diretor de Programação
+- [x] **scheduler_ai (Regras Adicionais):** A regra `flexible_theme` foi implementada no motor de agendamento.
+- [x] **scheduler_ai (Expansão do Motor):** O motor de agendamento foi expandido para gerar programação para múltiplos dias (7 dias).
+- [x] **admin-ui (Gerenciamento de Regras):** A interface básica para visualização das regras de agendamento foi criada no `admin-ui`.
 
 ### Etapa 1: O Pipeline de Ingestão
 - [x] **PostgreSQL (Schema):** O schema do banco de dados foi definido em `database_schema.sql`.
@@ -26,9 +30,8 @@ Este documento rastreia o progresso atual no roteiro de construção do software
 - [x] **scene-analyzer:** O worker de análise de cena foi implementado em `scene-analyzer/analyzer.py`.
 - [x] **Integração do Pipeline:** Todos os serviços da Etapa 1 foram refatorados para se comunicarem de forma assíncrona usando RabbitMQ, tornando o pipeline totalmente funcional.
 
-
 ## Próximos Passos
 
-1. Implementar as regras de agendamento restantes (ex: `flexible_theme`) no `scheduler_ai`.
-2. Implementar a interface no `admin-ui` para gerenciar as regras na `channel_master_grid`.
-3. Expandir o motor de agendamento para gerar a programação para múltiplos dias.
+1. Implementar o microsserviço `stream-api` para lidar com as solicitações de streaming.
+2. Integrar o `ffmpeg` para iniciar dinamicamente os processos de transcodificação e streaming.
+3. Desenvolver um player de vídeo no frontend para consumir o stream HLS/DASH.

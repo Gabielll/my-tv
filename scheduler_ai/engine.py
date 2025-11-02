@@ -1,6 +1,7 @@
 # scheduler_ai/engine.py
 
 import datetime
+import random
 
 def apply_series_linear_rule(rule, media_items, current_time):
     """
@@ -62,27 +63,74 @@ def apply_series_linear_rule(rule, media_items, current_time):
     return epg_entry, updated_state
 
 
-def process_scheduling_rules(rules, media_items):
+def apply_flexible_theme_rule(rule, media_items, current_time):
     """
-    Processa uma lista de regras de agendamento e gera a grade de programação.
+    Aplica a regra 'flexible_theme': seleciona um item de mídia aleatório que corresponde a um tema.
     """
-    print("Scheduling engine started...")
+    rule_details = rule['rules']['flexible_theme']
+    required_tags = set(rule_details['tags'])
+
+    # Filtra os media_items para encontrar aqueles que correspondem a todas as tags necessárias
+    eligible_items = []
+    for item in media_items:
+        item_tags = set(item.get('tags', []))
+        if required_tags.issubset(item_tags):
+            eligible_items.append(item)
+
+    if not eligible_items:
+        return None, None
+
+    # Seleciona um item aleatório da lista de elegíveis
+    selected_item = random.choice(eligible_items)
+
+    # Calcula o horário de início e fim
+    start_time = current_time.replace(
+        hour=rule_details['time_slot']['hour'],
+        minute=rule_details['time_slot']['minute'],
+        second=0,
+        microsecond=0
+    )
+    duration_seconds = selected_item['metadata'].get('duration_seconds', 1800) # Padrão de 30 min
+    end_time = start_time + datetime.timedelta(seconds=duration_seconds)
+
+    # Cria a entrada do EPG
+    epg_entry = {
+        'channel_id': rule['channel_id'],
+        'media_item_id': selected_item['id'],
+        'start_time_virtual': start_time,
+        'end_time_virtual': end_time,
+        'title': selected_item['title'],
+        'synopsis': selected_item.get('synopsis')
+    }
+
+    # Esta regra não precisa de atualização de estado, então retorna None
+    return epg_entry, None
+
+
+def process_scheduling_rules(rules, media_items, days_to_schedule=7):
+    """
+    Processa uma lista de regras de agendamento e gera a grade de programação para um número de dias.
+    """
+    print(f"Scheduling engine started for {days_to_schedule} days...")
     epg_entries = []
     updated_states = {}
 
-    # Define um ponto de partida para a programação (hoje)
-    start_of_day = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    start_date = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
-    for rule in rules:
-        # Por enquanto, estamos agendando para hoje, um item por regra.
-        # A lógica para agendar múltiplos dias e múltiplos itens virá depois.
-        current_scheduling_time = start_of_day
+    for i in range(days_to_schedule):
+        current_scheduling_day = start_date + datetime.timedelta(days=i)
 
-        if 'series_linear' in rule.get('rules', {}):
-            epg_entry, state = apply_series_linear_rule(rule, media_items, current_scheduling_time)
-            if epg_entry:
-                epg_entries.append(epg_entry)
-                updated_states[rule['id']] = state
+        for rule in rules:
+            if 'series_linear' in rule.get('rules', {}):
+                epg_entry, state = apply_series_linear_rule(rule, media_items, current_scheduling_day)
+                if epg_entry:
+                    epg_entries.append(epg_entry)
+                    updated_states[rule['id']] = state
+
+            elif 'flexible_theme' in rule.get('rules', {}):
+                epg_entry, _ = apply_flexible_theme_rule(rule, media_items, current_scheduling_day)
+                if epg_entry:
+                    epg_entries.append(epg_entry)
 
     print(f"Scheduling engine finished. Generated {len(epg_entries)} EPG entries.")
     return epg_entries, updated_states
