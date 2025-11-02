@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Media Player</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background-color: #000;
+        }
+        #video-player {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <video id="video-player" controls></video>
+
+    <!-- HLS.js Library -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const video = document.getElementById('video-player');
+            const channelId = 'jetix_2000'; // Hardcoded for this example
+            const sourceUrl = `/play/${channelId}/live.m3u8`;
+
+            if (Hls.isSupported()) {
+                const hls = new Hls();
+                hls.loadSource(sourceUrl);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    video.play();
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                // For native HLS support (e.g., Safari)
+                video.src = sourceUrl;
+                video.addEventListener('loadedmetadata', () => {
+                    video.play();
+                });
+            }
+
+            // --- Heartbeat ---
+            const heartbeatInterval = 30000; // 30 seconds
+            let heartbeatTimer;
+
+            function sendHeartbeat() {
+                console.log('Sending heartbeat...');
+                fetch(`/heartbeat/${channelId}`, {
+                    method: 'POST',
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        console.error('Heartbeat failed:', response.statusText);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Heartbeat response:', data);
+                })
+                .catch(err => {
+                    console.error('Error sending heartbeat:', err);
+                });
+            }
+
+            video.onplay = () => {
+                console.log('Playback started. Starting heartbeat timer.');
+                sendHeartbeat(); // Send one immediately
+                heartbeatTimer = setInterval(sendHeartbeat, heartbeatInterval);
+            };
+
+            video.onpause = () => {
+                console.log('Playback paused. Stopping heartbeat timer.');
+                clearInterval(heartbeatTimer);
+            };
+
+            window.onbeforeunload = () => {
+                // Ensure the timer is stopped if the user navigates away
+                clearInterval(heartbeatTimer);
+            };
+        });
+    </script>
+</body>
+</html>
