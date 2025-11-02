@@ -1,9 +1,13 @@
 import os
 import subprocess
 import logging
-import time
 import re
 import psycopg2
+import sys
+
+# Adiciona o diretório pai ao sys.path para permitir a importação de 'shared'
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from shared import rabbitmq_client
 
 # --- Configuração ---
 DB_HOST = os.getenv('DB_HOST', 'localhost')
@@ -81,15 +85,25 @@ def analyze_scenes(file_path):
         return []
 
 
-def process_message(media_item_id):
-    """Função principal que processa um item de mídia."""
+def process_message(message_body):
+    """Função de callback que processa uma mensagem da fila."""
+    try:
+        media_item_id = int(message_body)
+    except (ValueError, TypeError):
+        logging.error(f"A mensagem recebida não é um ID de item de mídia válido: '{message_body}'")
+        return
+
     logging.info(f"Processando media_item_id: {media_item_id}")
     conn = get_db_connection()
     if not conn:
-        return
+        raise Exception("Não foi possível conectar ao banco de dados.")
 
     try:
         with conn.cursor() as cur:
+            # Marca o item como 'processing'
+            cur.execute("UPDATE media_items SET status = 'analyzing' WHERE id = %s;", (media_item_id,))
+            conn.commit()
+
             # 1. Obter o caminho do arquivo normalizado
             cur.execute("SELECT file_path FROM media_items WHERE id = %s;", (media_item_id,))
             result = cur.fetchone()
@@ -131,41 +145,6 @@ def process_message(media_item_id):
         if conn:
             conn.close()
 
-# --- Simulação de Consumo de Fila ---
-def simulate_queue_consumption():
-    """
-    Simula o consumo de uma fila, procurando por itens que o normalization-worker marcou.
-    """
-    logging.info("Scene Analyzer iniciado. Aguardando novos itens de mídia...")
-
-    while True:
-        conn = get_db_connection()
-        if conn:
-            try:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT id FROM media_items WHERE status = 'pending_analysis' LIMIT 5;")
-                    items_to_process = cur.fetchall()
-
-                if items_to_process:
-                    for item in items_to_process:
-                        media_item_id = item[0]
-                        with conn.cursor() as cur:
-                            cur.execute("UPDATE media_items SET status = 'analyzing' WHERE id = %s;", (media_item_id,))
-                            conn.commit()
-
-                        process_message(media_item_id)
-                else:
-                    time.sleep(10)
-
-            except Exception as e:
-                logging.error(f"Erro no loop principal: {e}")
-                time.sleep(15)
-            finally:
-                if conn:
-                    conn.close()
-        else:
-            time.sleep(30)
-
-
 if __name__ == "__main__":
-    simulate_queue_consumption()
+    logging.info("Scene Analyzer iniciado.")
+    rabbitmq_client.start_consumer('scene_analysis_jobs', process_message)

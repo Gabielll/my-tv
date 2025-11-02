@@ -2,8 +2,13 @@ import os
 import time
 import logging
 import psycopg2
+import sys
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+
+# Adiciona o diretório pai ao sys.path para permitir a importação de 'shared'
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from shared import rabbitmq_client
 
 # --- Configuração ---
 # Obtém as configurações do ambiente ou usa valores padrão
@@ -84,8 +89,9 @@ class NewFileHandler(FileSystemEventHandler):
                 conn.commit()
                 logging.info(f"Arquivo '{file_path}' inserido no BD com o ID: {media_item_id}")
 
-                # TODO: Em vez de logar, publicar em uma fila RabbitMQ
-                logging.info(f"Ação futura: Publicar 'enrichment_job' para o media_item_id: {media_item_id}")
+                # Publica uma mensagem na fila para o próximo estágio (enriquecimento)
+                message = str(media_item_id)
+                rabbitmq_client.publish_message('enrichment_jobs', message)
 
         except Exception as e:
             logging.error(f"Erro ao processar o arquivo '{file_path}': {e}")
