@@ -1,0 +1,9 @@
+/* admin-ui/static/css/style.css */
+
+body {
+    padding-bottom: 60px; /* Margin for footer */
+}
+
+.container {
+    padding-top: 20px;
+}

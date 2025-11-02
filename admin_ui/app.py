@@ -1,4 +1,5 @@
 import os
+import sys
 from flask import Flask, request, render_template, jsonify
 from werkzeug.utils import secure_filename
 import logging
@@ -18,10 +19,34 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+# Adiciona o diretório raiz do projeto ao sys.path para encontrar 'shared'
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from shared.db import get_db_connection
+
 # --- Rotas ---
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/admin/rules')
+def list_rules():
+    """
+    Exibe a página de gerenciamento de regras de agendamento.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, channel_id, channel_name, is_active FROM channel_master_grid ORDER BY channel_id;")
+            rules = cur.fetchall()
+    except Exception as e:
+        logging.error(f"Erro ao buscar regras de agendamento: {e}")
+        rules = [] # Em caso de erro, exibe uma lista vazia
+    finally:
+        if conn:
+            conn.close()
+
+    return render_template('rules.html', rules=rules)
 
 @app.route('/upload', methods=['POST'])
 def upload_file():

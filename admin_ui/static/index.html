@@ -1,0 +1,38 @@
+{% extends "layout.html" %}
+{% block title %}Upload de Mídia{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header">
+            <h2>Upload de Mídia</h2>
+        </div>
+        <div class="card-body">
+            <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="mediafiles">Selecione os arquivos de mídia (até 16GB):</label>
+                    <input type="file" class="form-control-file" name="mediafiles" id="mediafiles" multiple required>
+                </div>
+                <button type="submit" class="btn btn-primary">Enviar</button>
+            </form>
+        </div>
+        <div class="card-footer" id="uploadStatus" style="display: none;">
+            <div class="progress">
+                <div class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+            </div>
+            <p id="statusText" class="mt-2"></p>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Script para lidar com o feedback do upload (opcional, mas recomendado)
+    document.getElementById('uploadForm').addEventListener('submit', function(e) {
+        document.getElementById('uploadStatus').style.display = 'block';
+        // Simplesmente para mostrar o progresso, não é um tracker real
+        let progressBar = document.querySelector('.progress-bar');
+        progressBar.style.width = '100%';
+        progressBar.innerText = 'Enviando...';
+        document.getElementById('statusText').innerText = 'Por favor, aguarde. Isso pode levar vários minutos.';
+    });
+</script>
+{% endblock %}
