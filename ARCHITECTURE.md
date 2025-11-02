@@ -100,18 +100,132 @@ Este fluxo tem duas partes: o agendamento (feito 1x por dia) e o streaming (feit
     - Ele mata o processo `ffmpeg` (usando o PID salvo) e limpa os arquivos HLS.
 **Resultado da Parte B:** O servidor volta a 0% de CPU, pronto para o próximo espectador.
 
-## 5. Roteiro de Construção (Fatiamento)
+## 5. Roteiro de Construção e Fatiamento de Microsserviços
 
-A implementação será dividida em três (3) etapas de construção principais.
-- **Etapa 1: O Pipeline de Ingestão (A "Fábrica")**
-    - **Foco:** Construir todos os componentes do Fluxo 1.
-    - **Componentes:** PostgreSQL (Schema), `udev-ingest`, `admin-ui` (só upload), `media-manager`, `metadata-enricher`, `normalization-worker`, `scene-analyzer`.
-    - **Resultado:** Um sistema que automaticamente cataloga, transcodifica e analisa qualquer arquivo de mídia adicionado (via USB ou Web). O BD estará populado, mas nada será "assistível".
-- **Etapa 2: O Diretor de Programação (O "Cérebro Criativo")**
-    - **Foco:** Construir o microsserviço que cria a programação (Parte A do Fluxo 2).
-    - **Componentes:** `scheduler-ai` e a expansão do `admin-ui` (para editar a `channel_master_grid`).
-    - **Resultado:** A tabela `epg_virtual` do PostgreSQL será preenchida com uma grade de programação inteligente e completa. O servidor ainda estará 100% ocioso.
-- **Etapa 3: O Consumo On-Demand (O "Play")**
-    - **Foco:** Construir os componentes que entregam o vídeo ao usuário (Parte B do Fluxo 2).
-    - **Componentes:** `stream-api`, Player Web (com Heartbeat) e a configuração final do `nginx` (proxy e HLS).
-    - **Resultado:** A aplicação está 100% funcional. O usuário pode "sintonizar" o canal e assistir à programação no ponto exato em que ela deveria estar.
+### 1. Visão Geral e Estratégia de Construção
+
+Este documento detalha o roteiro de construção (roadmap) para a implementação completa da arquitetura de microsserviços. Para garantir uma fundação robusta e permitir o desenvolvimento orientado a testes (TDD), a construção será "fatiada" em três (3) Etapas principais. A estratégia adotada é a de "core-to-interface" (do núcleo para a interface), onde construímos primeiro os sistemas de processamento de dados (Ingestão) antes de construir os sistemas de consumo de dados (Streaming).
+
+A arquitetura é dividida em dois fluxos primários:
+- **Fluxo de Ingestão (Da Mídia ao BD):** Transforma arquivos brutos em ativos catalogados.
+- **Fluxo de Programação e Stream (Do BD à Tela):** Transforma ativos catalogados em um stream de vídeo.
+
+O Fluxo de Ingestão é um pré-requisito fundamental para o Fluxo de Programação. Portanto, ele será nossa primeira etapa de construção.
+
+### 2. Etapa 1: O Pipeline de Ingestão (A "Fábrica de Conteúdo")
+
+**Objetivo:** Implementar o pipeline assíncrono completo que transforma arquivos de mídia brutos (de qualquer fonte) em ativos 100% processados, catalogados e analisados dentro do Banco de Dados Central.
+
+**Componentes-Chave desta Etapa:**
+- PostgreSQL (Definição de Schema)
+- udev-ingest (Absorvedor Offline)
+- admin-ui (Portal de Ingestão Web)
+- media-manager (O "Bibliotecário")
+- metadata-enricher (O "Curador")
+- normalization-worker (O "Estagiário")
+- scene-analyzer (O "Editor")
+
+**Dependências Fundamentais (Passo Zero):**
+Antes de qualquer serviço, o "Cérebro Central" (PostgreSQL) deve ser modelado. As especificações de schema para as tabelas `media_items` (incluindo metadata JSONB, `last_played_time`, `play_count`), `cue_points`, `channel_master_grid` e `epg_virtual` devem ser definidas e versionadas.
+
+**Fluxo de Trabalho Técnico (TDD):**
+- **Unificação de Staging (As Entradas):**
+    - Serão implementadas as duas "portas" de entrada.
+    - O `udev-ingest` (script bash/udev) será testado para detectar um USB, montar e copiar (rsync) os arquivos para `/mnt/media/staging_ingest/`.
+    - O `admin-ui` (servidor web) será testado para receber um upload HTTP e salvar o arquivo no mesmo local: `/mnt/media/staging_ingest/`.
+- **Workers de Processamento (TDD Isolado):**
+    - O `metadata-enricher` será desenvolvido e testado isoladamente. Os testes unitários devem validar a lógica de parsing de nome (para filmes e séries) e testes de integração devem simular (mock) chamadas à API do TMDB, validando a geração correta do JSONB de metadados.
+    - O `normalization-worker` será testado para receber um caminho de arquivo e produzir um arquivo de saída em `/mnt/media/normalized/` que corresponda exatamente às especificações de codec (H.264, AAC) e resolução.
+    - O `scene-analyzer` será testado para receber um arquivo normalizado, executar a detecção de breaks (ex: blackdetect) e inserir corretamente os `cue_points` no PostgreSQL.
+- **Orquestração (O "Bibliotecário"):**
+    - O `media-manager` será implementado para monitorar a pasta de staging.
+    - Testes validarão que, ao detectar um arquivo, ele chama (1º) o `metadata-enricher`.
+    - Se for usada uma fila (ex: RabbitMQ), testes validarão a publicação dos jobs "Normalização" e "Análise".
+    - Testes validarão que, após a conclusão bem-sucedida de todos os jobs, o `media-manager` move o arquivo original de `/staging_ingest/` para seu local final (ex: `/mnt/media/series/...`).
+
+**Critério de Conclusão da Etapa 1:**
+Um arquivo de vídeo (ex: `Power.Rangers.S01E01.mkv`) colocado no USB ou enviado via Web UI resulta automaticamente em:
+- Uma entrada completa na tabela `media_items` (com sinopse, tags, etc.).
+- Entradas correspondentes na tabela `cue_points`.
+- Um arquivo de vídeo normalizado em `/mnt/media/normalized/`.
+- O arquivo original movido para a biblioteca final.
+O sistema de "consumo" (streaming) ainda não existe.
+
+### 3. Etapa 2: O Diretor de Programação (O "Cérebro Criativo")
+
+**Objetivo:** Implementar o microsserviço que consome os ativos catalogados na Etapa 1 e aplica a lógica de negócios para gerar a grade de programação virtual (EPG).
+
+**Componentes-Chave desta Etapa:**
+- scheduler-ai (O "Diretor")
+- admin-ui (Expansão: "Sala de Direção")
+
+**Dependências Fundamentais:**
+- Etapa 1 concluída (o `media_items` e `cue_points` devem estar populados).
+- Schema da `channel_master_grid` e `epg_virtual` definido (feito na Etapa 1).
+
+**Fluxo de Trabalho Técnico (TDD):**
+- **Interface de Regras (A "Sala de Direção"):**
+    - O `admin-ui` será expandido. Será criada a interface (CRUD) que permite ao usuário (você) definir as regras e "âncoras" do canal na tabela `channel_master_grid`.
+    - Testes devem validar a inserção de uma regra de "bloco âncora", como o exemplo de `series_linear` (Power Rangers às 17h).
+- **Motor de Regras (O "Diretor"):**
+    - O `scheduler-ai` será implementado como um processo (ex: cron diário).
+    - **Leitura:** Testes validarão que o serviço lê corretamente (1) as regras da `channel_master_grid` e (2) os ativos de `media_items`.
+    - **Lógica de Continuidade (TDD):** Implementar a lógica `series_linear`. O teste deve:
+        - Simular o estado `current_episode: 12` na `program_config`.
+        - Validar que o `scheduler-ai` agenda o episódio 12.
+        - Validar que ele atualiza o estado para `current_episode: 13` na `channel_master_grid`.
+        - Validar que ele atualiza o `last_played_time` e `play_count` do episódio 12 no `media_items`.
+    - **Lógica de Rotação (TDD):** Implementar a lógica `flexible_theme`. O teste deve validar a consulta SQL que seleciona mídias com base em tags (ex: 'halloween') e `last_played_time` (anti-repetição).
+    - **Escrita:** Testes validarão que, ao final do processo, a grade completa é escrita corretamente na tabela `epg_virtual`.
+
+**Critério de Conclusão da Etapa 2:**
+Após a execução do `scheduler-ai`, a tabela `epg_virtual` está 100% populada com a programação futura (ex: próximos 3 a 7 dias), respeitando as regras definidas na `channel_master_grid`. O sistema de streaming (Etapa 3) ainda não consome esses dados. O servidor permanece 100% ocioso (0% CPU).
+
+### 4. Etapa 3: Consumo On-Demand e Acesso (O "Player")
+
+**Objetivo:** Implementar o "front-end" de consumo e o "cérebro" on-demand que inicia os streams de forma dinâmica, permitindo ao usuário assistir à programação criada na Etapa 2.
+
+**Componentes-Chave desta Etapa:**
+- stream-api (O "Cérebro On-Demand")
+- nginx (O "Porteiro")
+- Player Web (Cliente HTML/JS)
+
+**Dependências Fundamentais:**
+- Etapa 2 concluída (a `epg_virtual` está populada).
+- Etapa 1 concluída (os arquivos em `/mnt/media/normalized/` existem).
+
+**Fluxo de Trabalho Técnico (TDD):**
+- **O "Cérebro On-Demand" (stream-api):**
+    - **Endpoint de Gatilho (TDD):** Implementar o endpoint principal (ex: `GET /play/<canal>/canal.m3u8`).
+    - **Teste de Lógica (Primeiro Espectador):** Um teste deve simular uma chamada a este endpoint. O teste deve validar que a `stream-api`:
+        - Consulta a `epg_virtual` para o horário atual (`NOW()`).
+        - Encontra o item correto (ex: Ep. 12, `start_time`: 20:25:00).
+        - Calcula o offset corretamente (ex: `NOW()` (20:30:05) - `start_time` (20:25:00) = 305 segundos).
+        - Gera o `ffconcat`.
+        - Inicia o subprocesso `ffmpeg` com os argumentos corretos (`-ss 305`, `-c copy`).
+        - Salva o PID do `ffmpeg` em seu estado interno.
+    - **Teste de Lógica (Espectador Simultâneo):** Um teste deve simular uma segunda chamada ao mesmo endpoint (enquanto o primeiro está ativo). O teste deve validar que nenhum novo processo `ffmpeg` é criado e que o segundo usuário é redirecionado para o stream existente.
+- **Lifecycle (Heartbeat e Reaper):**
+    - Implementar o endpoint `POST /heartbeat/<canal>`.
+    - Implementar o processo "Reaper" (Ceifador).
+    - **Testar o "Reaper":** Simular um stream ativo cujo `last_heartbeat` não é atualizado. Validar que, após o timeout (ex: 90s), o "Reaper" identifica o processo (usando o PID salvo) e o encerra.
+- **O Cliente (Player Web):**
+    - Desenvolver o Player Web (HTML/JS).
+    - O player deve ser capaz de chamar o endpoint de gatilho (ex: `/play/jetix_2000/canal.m3u8`).
+    - Implementar a lógica `setInterval` que envia o `POST /heartbeat/jetix_2000` a cada 30 segundos.
+- **A "Porta" (Nginx):**
+    - Implementar a configuração final do `nginx`.
+    - `location /play/` deve ser um `proxy_pass` para a `stream-api`.
+    - `location /hls/` deve servir os arquivos estáticos (`.m3u8`, `.ts`) que o `ffmpeg` está criando em tempo real.
+    - `location /` deve servir o Player Web.
+
+**Critério de Conclusão da Etapa 3:**
+A aplicação está 100% funcional. O usuário acessa o IP/domínio, o Player Web carrega, o `ffmpeg` é iniciado dinamicamente pela `stream-api` no ponto exato da programação, e o usuário assiste ao stream. Ao fechar a aba, o "Reaper" limpa o processo `ffmpeg` e o servidor retorna a 0% de CPU.
+
+### 5. Resumo das Etapas de Construção
+
+| Etapa | Título | Foco Principal | Resultado Chave |
+| :--- | :--- | :--- | :--- |
+| 1 | Pipeline de Ingestão | `media-manager`, `metadata-enricher`, `normalization-worker`, `scene-analyzer` | O PostgreSQL é populado automaticamente com ativos (`media_items`, `cue_points`) a partir de arquivos brutos. |
+| 2 | Diretor de Programação | `scheduler-ai`, `channel_master_grid` (via `admin-ui`) | A tabela `epg_virtual` é preenchida com a grade de programação futura, com base em regras de negócio. |
+| 3 | Consumo On-Demand | `stream-api`, `nginx`, Player Web | O usuário pode assistir ao EPG da Etapa 2, com streams (`ffmpeg`) iniciados e encerrados dinamicamente. |
