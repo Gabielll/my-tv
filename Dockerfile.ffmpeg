@@ -1,0 +1,25 @@
+# Dockerfile for services requiring ffmpeg
+FROM python:3.9-slim
+
+# Install ffmpeg
+RUN apt-get update && apt-get install -y ffmpeg
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Set the PYTHONPATH environment variable
+ENV PYTHONPATH "${PYTHONPATH}:/app"
+
+# Copy shared modules
+COPY shared/ /app/shared/
+
+# Declare an argument for the requirements file path
+ARG REQUIREMENTS_FILE
+
+# Copy the specific requirements file and install dependencies
+COPY ${REQUIREMENTS_FILE} /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the service's source code
+ARG SERVICE_DIR
+COPY ${SERVICE_DIR}/ /app/

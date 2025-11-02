@@ -1,0 +1,136 @@
+# render.yaml
+# This file configures the deployment of the media server project on Render.
+
+envVarGroups:
+  - name: shared-app-env
+    envVars:
+      - key: DB_HOST
+        fromService:
+          type: pserv
+          name: media-db
+          property: host
+      - key: DB_PORT
+        fromService:
+          type: pserv
+          name: media-db
+          property: port
+      - key: DB_NAME
+        value: media_server
+      - key: DB_USER
+        value: root # Cockroach default insecure user
+      - key: DB_PASSWORD
+        value: '' # Cockroach default insecure password
+      - key: RABBITMQ_HOST
+        fromService:
+          type: pserv
+          name: rabbitmq
+          property: host
+      - key: RABBITMQ_USER
+        value: user
+      - key: RABBITMQ_PASS
+        value: password
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+services:
+  # --- Infrastructure Services ---
+  - type: pserv
+    name: media-db
+    image:
+      url: cockroachdb/cockroach:latest
+    args: ["start-single-node", "--insecure"] # Command in Render's format
+    disk:
+      name: db-data
+      mountPath: /cockroach/cockroach-data
+      sizeGB: 10
+
+  - type: pserv
+    name: rabbitmq
+    image:
+      url: rabbitmq:3.11-management
+    env:
+      - key: RABBITMQ_DEFAULT_USER
+        value: user
+      - key: RABBITMQ_DEFAULT_PASS
+        value: password
+    disk:
+      name: rabbitmq-data
+      mountPath: /var/lib/rabbitmq
+      sizeGB: 5
+
+  # --- One-off Job for Database Initialization ---
+  - type: job
+    name: db-init
+    plan: free
+    image:
+      url: cockroachdb/cockroach:latest # Use cockroach image to get the client
+    startCommand: >
+      /cockroach/cockroach sql --insecure --host=$DB_HOST -e 'CREATE DATABASE IF NOT EXISTS media_server;' &&
+      /cockroach/cockroach sql --insecure --host=$DB_HOST --database=media_server -f ./database_schema.sql
+    envVars:
+      - fromGroup: shared-app-env
+
+  # --- Application Services ---
+  - type: pserv
+    name: media-manager
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    dockerBuildCommand: >
+      docker build --build-arg SERVICE_DIR=media-manager --build-arg REQUIREMENTS_FILE=media-manager/requirements.txt -t $IMAGE .
+    startCommand: python media_manager.py
+    envVars:
+      - fromGroup: shared-app-env
+      - key: STAGING_DIR
+        value: /mnt/media/staging_ingest
+    disk: &media-disk
+      name: media-storage
+      mountPath: /mnt/media
+      sizeGB: 50
+
+  - type: pserv
+    name: metadata-enricher
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    dockerBuildCommand: >
+      docker build --build-arg SERVICE_DIR=metadata-enricher --build-arg REQUIREMENTS_FILE=metadata-enricher/requirements.txt -t $IMAGE .
+    startCommand: python metadata_enricher.py
+    envVars:
+      - fromGroup: shared-app-env
+
+  - type: pserv
+    name: normalization-worker
+    dockerfilePath: Dockerfile.ffmpeg
+    dockerContext: .
+    dockerBuildCommand: >
+      docker build -f Dockerfile.ffmpeg --build-arg SERVICE_DIR=normalization-worker --build-arg REQUIREMENTS_FILE=normalization-worker/requirements.txt -t $IMAGE .
+    startCommand: python normalization_worker.py
+    envVars:
+      - fromGroup: shared-app-env
+    disk: *media-disk
+
+  - type: pserv
+    name: scene-analyzer
+    dockerfilePath: Dockerfile.ffmpeg
+    dockerContext: .
+    dockerBuildCommand: >
+      docker build -f Dockerfile.ffmpeg --build-arg SERVICE_DIR=scene-analyzer --build-arg REQUIREMENTS_FILE=scene-analyzer/requirements.txt -t $IMAGE .
+    startCommand: python scene_analyzer.py
+    envVars:
+      - fromGroup: shared-app-env
+    disk: *media-disk
+
+  - type: web
+    name: admin-ui
+    dockerfilePath: ./admin-ui/Dockerfile
+    dockerContext: ./admin-ui
+    envVars:
+      - key: STAGING_DIR
+        value: /mnt/media/staging_ingest
+    disk:
+      name: media-storage
+      mountPath: /mnt/media/staging_ingest
+      sizeGB: 50
+    ports:
+      - "8000:8000"
+    healthCheck:
+      path: /

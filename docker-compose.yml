@@ -1,0 +1,146 @@
+version: '3.8'
+
+services:
+  # --- Infrastructure Services ---
+  rabbitmq:
+    image: rabbitmq:3.11-management
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq/
+    environment:
+      - RABBITMQ_DEFAULT_USER=user
+      - RABBITMQ_DEFAULT_PASS=password
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db:
+    image: cockroachdb/cockroach:latest
+    command: start-single-node --insecure
+    hostname: db
+    ports:
+      - "26257:26257"
+      - "8081:8080"
+    volumes:
+      - db_data:/cockroach/cockroach-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- Database Initializer ---
+  db-init:
+    image: cockroachdb/cockroach:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./:/app/
+    command: >
+      sh -c "
+        echo 'Waiting for DB to be ready...';
+        sleep 5;
+        /cockroach/cockroach sql --insecure --host=db -e 'CREATE DATABASE IF NOT EXISTS media_server;';
+        /cockroach/cockroach sql --insecure --host=db --database=media_server -f /app/database_schema.sql;
+        echo 'Database initialized.';
+      "
+
+  # --- Application Services ---
+  media-manager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_DIR: media-manager
+        REQUIREMENTS_FILE: media-manager/requirements.txt
+    command: python media_manager.py
+    environment: &app-env
+      DB_HOST: db
+      DB_PORT: '26257'
+      DB_NAME: media_server
+      DB_USER: root
+      DB_PASSWORD: ''
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: user
+      RABBITMQ_PASS: password
+      STAGING_DIR: /mnt/media/staging_ingest
+    volumes:
+      - media_volume:/mnt/media
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  metadata-enricher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_DIR: metadata-enricher
+        REQUIREMENTS_FILE: metadata-enricher/requirements.txt
+    command: python metadata_enricher.py
+    environment: *app-env
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  normalization-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_DIR: normalization-worker
+        REQUIREMENTS_FILE: normalization-worker/requirements.txt
+    command: python normalization_worker.py
+    environment: *app-env
+    volumes:
+      - media_volume:/mnt/media
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  scene-analyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_DIR: scene-analyzer
+        REQUIREMENTS_FILE: scene-analyzer/requirements.txt
+    command: python scene_analyzer.py
+    environment: *app-env
+    volumes:
+      - media_volume:/mnt/media
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  admin-ui:
+    build:
+      context: ./admin-ui
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - media_volume:/mnt/media/staging_ingest
+    environment:
+      STAGING_DIR: /mnt/media/staging_ingest
+    depends_on:
+      - media-manager
+
+volumes:
+  rabbitmq_data:
+  db_data:
+  media_volume:
