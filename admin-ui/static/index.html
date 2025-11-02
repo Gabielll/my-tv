@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Upload de Mídia</title>
+    <style>
+        body { font-family: sans-serif; background-color: #f4f4f4; color: #333; }
+        .container { max-width: 600px; margin: 50px auto; padding: 20px; background-color: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #555; }
+        .upload-form { display: flex; flex-direction: column; gap: 15px; }
+        .drop-zone { border: 2px dashed #ccc; border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: background-color 0.2s; }
+        .drop-zone.dragover { background-color: #e9e9e9; border-color: #aaa; }
+        .drop-zone p { margin: 0; }
+        .file-input { display: none; }
+        .submit-btn { padding: 10px 15px; background-color: #007bff; color: #fff; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+        .submit-btn:hover { background-color: #0056b3; }
+        #file-list { margin-top: 20px; }
+        .file-item { background-color: #f9f9f9; border: 1px solid #ddd; padding: 8px; border-radius: 4px; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Upload de Mídia</h1>
+        <form id="uploadForm" class="upload-form" action="/upload" method="post" enctype="multipart/form-data">
+            <div id="dropZone" class="drop-zone">
+                <p>Arraste e solte os arquivos aqui ou clique para selecionar</p>
+                <input type="file" id="fileInput" class="file-input" multiple>
+            </div>
+            <div id="file-list"></div>
+            <button type="submit" class="submit-btn">Enviar</button>
+        </form>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileList = document.getElementById('file-list');
+        const uploadForm = document.getElementById('uploadForm');
+
+        // Previne o comportamento padrão do navegador para drag and drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Adiciona a classe 'dragover' quando o arquivo está sobre a área
+        dropZone.addEventListener('dragenter', () => dropZone.classList.add('dragover'));
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+
+        // Lida com os arquivos soltos
+        dropZone.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            dropZone.classList.remove('dragover');
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+
+        // Abre o seletor de arquivos ao clicar na área
+        dropZone.onclick = () => fileInput.click();
+
+        // Lida com os arquivos selecionados
+        fileInput.addEventListener('change', function() {
+            handleFiles(this.files);
+        });
+
+        let filesToUpload = [];
+
+        function handleFiles(files) {
+            files = [...files];
+            files.forEach(file => {
+                if (filesToUpload.every(f => f.name !== file.name)) {
+                    filesToUpload.push(file);
+                }
+            });
+            renderFileList();
+        }
+
+        function renderFileList() {
+            fileList.innerHTML = '';
+            filesToUpload.forEach((file, index) => {
+                const fileItem = document.createElement('div');
+                fileItem.classList.add('file-item');
+                fileItem.textContent = `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+                fileList.appendChild(fileItem);
+            });
+        }
+
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData();
+            filesToUpload.forEach(file => {
+                formData.append('mediafiles', file);
+            });
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    alert('Upload concluído com sucesso!');
+                    filesToUpload = [];
+                    renderFileList();
+                } else {
+                    const errorText = await response.text();
+                    alert(`Falha no upload: ${errorText}`);
+                }
+            } catch (error) {
+                console.error('Erro ao enviar arquivos:', error);
+                alert('Ocorreu um erro de rede durante o upload.');
+            }
+        });
+    </script>
+</body>
+</html>
