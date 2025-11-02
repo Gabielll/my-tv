@@ -1,0 +1,8 @@
+# /etc/udev/rules.d/99-media-ingest.rules
+#
+# Regra do udev para acionar o script de ingestão de mídia quando um
+# dispositivo de armazenamento USB é conectado.
+
+# Aciona na adição de uma partição de um dispositivo USB que seja um disco.
+# Evita acionar em hubs USB, teclados, etc.
+ACTION=="add", SUBSYSTEM=="block", KERNEL=="sd[a-z][0-9]*", SUBSYSTEMS=="usb", RUN+="/bin/systemd-run --on-active=30s --unit=media-ingest-%k /usr/local/bin/udev-ingest.sh /dev/%k"
