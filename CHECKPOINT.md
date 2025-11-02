@@ -4,12 +4,13 @@ Este documento rastreia o progresso atual no roteiro de construção do software
 
 ## Etapa Atual
 
-**Etapa 3: O Consumo On-Demand**
+**Etapa 3: O Consumo On-Demand (Concluída)**
 
 ## Progresso
-- [ ] **stream-api (Estrutura):** Criar a estrutura inicial do microsserviço `stream-api` para lidar com as solicitações de streaming.
-- [ ] **FFmpeg (Integração):** Integrar o `ffmpeg` para iniciar dinamicamente os processos de transcodificação e streaming.
-- [ ] **Frontend (Player):** Desenvolver um player de vídeo no frontend para consumir o stream HLS/DASH.
+- [x] **stream-api (Estrutura):** Criar a estrutura inicial do microsserviço `stream-api` para lidar com as solicitações de streaming.
+- [x] **FFmpeg (Integração):** Integrar o `ffmpeg` para iniciar dinamicamente os processos de transcodificação e streaming.
+- [x] **Frontend (Player):** Desenvolver um player de vídeo no frontend para consumir o stream HLS/DASH.
+- [x] **Nginx (Configuração):** Configurar o Nginx para orquestrar o tráfego entre o player, a API e os arquivos de stream.
 
 ---
 
@@ -32,6 +33,4 @@ Este documento rastreia o progresso atual no roteiro de construção do software
 
 ## Próximos Passos
 
-1. Implementar o microsserviço `stream-api` para lidar com as solicitações de streaming.
-2. Integrar o `ffmpeg` para iniciar dinamicamente os processos de transcodificação e streaming.
-3. Desenvolver um player de vídeo no frontend para consumir o stream HLS/DASH.
+O desenvolvimento principal está concluído. Os próximos passos podem incluir a adição de mais regras de agendamento, melhorias na interface do usuário ou a implementação de monitoramento.
