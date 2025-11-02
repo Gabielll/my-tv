@@ -15,6 +15,7 @@ Este documento rastreia o progresso atual no roteiro de construção do software
 - [x] **metadata-enricher:** O serviço de enriquecimento de metadados foi implementado em `metadata-enricher/enricher.py`.
 - [x] **normalization-worker:** O worker de transcodificação foi implementado em `normalization-worker/worker.py`.
 - [x] **scene-analyzer:** O worker de análise de cena foi implementado em `scene-analyzer/analyzer.py`.
+- [x] **Integração do Pipeline:** Todos os serviços da Etapa 1 foram refatorados para se comunicarem de forma assíncrona usando RabbitMQ, tornando o pipeline totalmente funcional.
 
 ## Próximos Passos
 

@@ -2,13 +2,17 @@ import os
 import re
 import json
 import logging
-import time
 import psycopg2
 import requests
+import sys
 from dotenv import load_dotenv
 
+# Adiciona o diretório pai ao sys.path para permitir a importação de 'shared'
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from shared import rabbitmq_client
+
 # --- Configuração ---
-load_dotenv() # Carrega variáveis de ambiente de um arquivo .env
+load_dotenv()  # Carrega variáveis de ambiente de um arquivo .env
 
 DB_HOST = os.getenv('DB_HOST', 'localhost')
 DB_PORT = os.getenv('DB_PORT', '5432')
@@ -101,23 +105,35 @@ def fetch_metadata_from_tmdb(parsed_info):
     return None
 
 
-def process_message(media_item_id):
-    """Função principal que processa um item de mídia."""
+def process_message(message_body):
+    """Função de callback que processa uma mensagem da fila."""
+    try:
+        media_item_id = int(message_body)
+    except (ValueError, TypeError):
+        logging.error(f"A mensagem recebida não é um ID de item de mídia válido: '{message_body}'")
+        return
+
     logging.info(f"Processando media_item_id: {media_item_id}")
     conn = get_db_connection()
     if not conn:
-        return
+        # A mensagem será rejeitada e não será re-enfileirada se a conexão com o BD falhar
+        raise Exception("Não foi possível conectar ao banco de dados.")
 
+    job_successful = False
     try:
         with conn.cursor() as cur:
+            # Marca o item como 'processing' para evitar trabalho duplicado
+            cur.execute("UPDATE media_items SET status = 'enriching' WHERE id = %s;", (media_item_id,))
+            conn.commit()
+
             # 1. Obter o nome do arquivo do BD
-            cur.execute("SELECT title, original_file_path FROM media_items WHERE id = %s;", (media_item_id,))
+            cur.execute("SELECT original_file_path FROM media_items WHERE id = %s;", (media_item_id,))
             result = cur.fetchone()
             if not result:
                 logging.error(f"media_item_id {media_item_id} não encontrado no banco de dados.")
                 return
 
-            original_filename = os.path.basename(result[1])
+            original_filename = os.path.basename(result[0])
 
             # 2. Analisar o nome do arquivo
             parsed_info = parse_filename(original_filename)
@@ -130,7 +146,7 @@ def process_message(media_item_id):
             if metadata:
                 new_title = metadata.get('title') or metadata.get('name', parsed_info['title'])
                 synopsis = metadata.get('overview', '')
-                tags = metadata.get('genres', []) # TMDB usa 'genres'
+                tags = metadata.get('genres', [])  # TMDB usa 'genres'
 
                 cur.execute(
                     """
@@ -141,17 +157,20 @@ def process_message(media_item_id):
                     (new_title, synopsis, json.dumps(tags), json.dumps(metadata), 'pending_normalization', media_item_id)
                 )
                 logging.info(f"Metadados para '{new_title}' (ID: {media_item_id}) atualizados com sucesso.")
+                job_successful = True
             else:
                 cur.execute(
                     "UPDATE media_items SET status = %s WHERE id = %s;",
                     ('needs_review', media_item_id)
                 )
                 logging.warning(f"Não foram encontrados metadados para o ID: {media_item_id}. Marcado como 'needs_review'.")
+                # Consideramos 'needs_review' como um final de pipeline para este item, não um erro.
 
             conn.commit()
 
-            # TODO: Publicar na próxima fila (normalization_jobs)
-            logging.info(f"Ação futura: Publicar 'normalization_job' para o media_item_id: {media_item_id}")
+            # 5. Publicar na próxima fila se o enriquecimento foi bem-sucedido
+            if job_successful:
+                rabbitmq_client.publish_message('normalization_jobs', str(media_item_id))
 
     except Exception as e:
         logging.error(f"Erro ao processar o media_item_id {media_item_id}: {e}")
@@ -161,48 +180,6 @@ def process_message(media_item_id):
         if conn:
             conn.close()
 
-# --- Simulação de Consumo de Fila ---
-def simulate_queue_consumption():
-    """
-    Esta função simula o consumo de uma fila. Em um sistema real,
-    isso seria substituído pela lógica do Pika para consumir do RabbitMQ.
-    """
-    logging.info("Metadata Enricher iniciado. Aguardando novos itens de mídia...")
-
-    while True:
-        conn = get_db_connection()
-        if conn:
-            try:
-                with conn.cursor() as cur:
-                    # Procura por itens que o media-manager acabou de adicionar
-                    cur.execute("SELECT id FROM media_items WHERE status = 'pending_enrichment' LIMIT 10;")
-                    items_to_process = cur.fetchall()
-
-                if items_to_process:
-                    for item in items_to_process:
-                        media_item_id = item[0]
-                        # Marca como 'processing' para evitar que outro worker pegue
-                        with conn.cursor() as cur:
-                            cur.execute("UPDATE media_items SET status = 'enriching' WHERE id = %s;", (media_item_id,))
-                            conn.commit()
-
-                        process_message(media_item_id)
-                else:
-                    # Se não houver nada para fazer, espere um pouco
-                    time.sleep(10)
-
-            except Exception as e:
-                logging.error(f"Erro no loop principal: {e}")
-                time.sleep(15) # Espera mais em caso de erro
-            finally:
-                if conn:
-                    conn.close()
-        else:
-            # Se não conseguir conectar ao BD, espera antes de tentar novamente
-            time.sleep(30)
-
-
 if __name__ == "__main__":
-    # Em uma implementação real, aqui viria a lógica de conexão com RabbitMQ
-    # e o início do consumo da fila. Por enquanto, simulamos.
-    simulate_queue_consumption()
+    logging.info("Metadata Enricher iniciado.")
+    rabbitmq_client.start_consumer('enrichment_jobs', process_message)
