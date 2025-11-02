@@ -1,7 +1,13 @@
 import os
-from flask import Flask, request, render_template, jsonify
+import sys
+from flask import Flask, request, render_template, jsonify, redirect, url_for
 from werkzeug.utils import secure_filename
 import logging
+
+# Adiciona o diretório raiz do projeto ao sys.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from shared.db import get_db_connection
 
 # --- Configuração ---
 UPLOAD_FOLDER = '/mnt/media/staging_ingest'
@@ -64,6 +70,24 @@ def upload_file():
         ), 207 # Multi-Status
 
     return jsonify(message=f"Todos os {success_count} arquivos foram enviados com sucesso!"), 200
+
+
+@app.route('/scheduling', methods=['GET', 'POST'])
+def scheduling():
+    conn = get_db_connection()
+    try:
+        if request.method == 'POST':
+            # Lógica para salvar a regra de agendamento
+            # (Isso será implementado em um passo futuro)
+            pass
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM channel_master_grid ORDER BY channel_name;")
+            rules = cur.fetchall()
+            return render_template('scheduling.html', rules=rules)
+    finally:
+        conn.close()
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000, debug=True)

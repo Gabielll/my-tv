@@ -140,6 +140,21 @@ services:
     depends_on:
       - media-manager
 
+  scheduler-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_DIR: scheduler_ai
+        REQUIREMENTS_FILE: scheduler_ai/requirements.txt
+    command: python scheduler.py
+    environment: *app-env
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
 volumes:
   rabbitmq_data:
   db_data:
