@@ -9,7 +9,7 @@ Este documento rastreia o progresso atual no roteiro de construção do software
 ## Progresso
 
 - [x] **scheduler_ai (Estrutura):** A estrutura inicial do microsserviço foi criada (`scheduler_ai/`, `requirements.txt`, `tests/`).
-- [x] **scheduler_ai (Lógica de DB):** O serviço agora pode se conectar ao PostgreSQL e buscar as regras de agendamento da tabela `channel_master_grid`.
+- [x] **scheduler_ai (Lógica de DB):** O serviço agora pode se conectar ao PostgreSQL, buscar as regras de agendamento da `channel_master_grid` e os itens de mídia da `media_items`.
 
 ---
 
@@ -28,5 +28,5 @@ Este documento rastreia o progresso atual no roteiro de construção do software
 
 ## Próximos Passos
 
-1. Implementar a lógica principal do serviço `scheduler_ai` para ler os `media_items` e aplicar as regras para gerar o EPG.
+1. Implementar o motor de regras do `scheduler_ai` para aplicar as regras aos `media_items` e gerar a grade de programação (`epg_virtual`).
 2. Implementar a interface no `admin-ui` para gerenciar as regras na `channel_master_grid`.

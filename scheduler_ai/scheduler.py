@@ -15,6 +15,15 @@ def fetch_scheduling_rules(conn):
         rules = cur.fetchall()
         return rules
 
+def fetch_media_items(conn):
+    """
+    Busca todos os itens de mídia disponíveis no banco de dados.
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM media_items WHERE status = 'processed';")
+        media_items = cur.fetchall()
+        return media_items
+
 def main():
     """
     Função principal para executar o agendador.
@@ -27,6 +36,9 @@ def main():
 
         rules = fetch_scheduling_rules(conn)
         print(f"Found {len(rules)} scheduling rules.")
+
+        media_items = fetch_media_items(conn)
+        print(f"Found {len(media_items)} processed media items.")
 
     except Exception as e:
         print(f"An error occurred: {e}")

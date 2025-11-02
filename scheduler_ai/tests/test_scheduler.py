@@ -37,6 +37,33 @@ def test_fetch_scheduling_rules(mocker):
     assert rules[0]["channel"] == "jetix_2000"
     assert rules[1]["rule_type"] == "flexible_theme"
 
+def test_fetch_media_items(mocker):
+    """
+    Testa se a função fetch_media_items executa a consulta SQL correta.
+    """
+    # Cria um mock para a conexão com o banco de dados
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+
+    # Configura o mock do cursor para retornar um resultado simulado
+    mock_cursor.fetchall.return_value = [
+        {"id": 1, "title": "Power Rangers S01E01", "status": "processed"},
+        {"id": 2, "title": "Power Rangers S01E02", "status": "processed"}
+    ]
+
+    # Configura o gerenciador de contexto 'with' para retornar o mock do cursor
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+
+    # Chama a função que está sendo testada
+    media_items = scheduler.fetch_media_items(mock_conn)
+
+    # Verifica se a consulta SQL correta foi executada
+    mock_cursor.execute.assert_called_once_with("SELECT * FROM media_items WHERE status = 'processed';")
+
+    # Verifica se o resultado retornado está correto
+    assert len(media_items) == 2
+    assert media_items[0]["title"] == "Power Rangers S01E01"
+
 def test_initial():
     """
     Teste inicial para garantir que o ambiente de teste está funcionando.
