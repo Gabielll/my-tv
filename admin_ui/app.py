@@ -73,8 +73,11 @@ def after_request(response):
 
 # --- Funções Auxiliares ---
 def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in media_config['allowed_extensions']
+    if '.' not in filename:
+        return False
+    
+    extension = '.' + filename.rsplit('.', 1)[1].lower()
+    return extension in media_config['allowed_extensions']
 
 # --- Rotas ---
 @app.route('/')
