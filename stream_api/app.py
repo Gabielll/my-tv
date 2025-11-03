@@ -4,13 +4,27 @@ import subprocess
 import threading
 import time
 from datetime import datetime, timezone, timedelta
-from flask import Flask, jsonify, abort, request
+from flask import Flask, jsonify, abort, request, g
 
 # Add the shared directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'shared')))
 from db import get_db_connection
+from logging_config import configure_logging, get_logger, generate_correlation_id, CorrelationContext
+from health_check import create_standard_health_checker
+from config import Config
+
+# --- Configuração ---
+service_config = Config.get_service_config()
+
+# Configure logging
+configure_logging(service_config['name'])
+logger = get_logger(service_config['name'])
 
 app = Flask(__name__)
+
+# Create health checker
+health_checker = create_standard_health_checker(service_config['name'], include_rabbitmq=False)
+health_checker.create_flask_endpoint(app)
 
 # --- Configuration ---
 HEARTBEAT_TIMEOUT_SECONDS = 90
@@ -20,6 +34,49 @@ REAPER_INTERVAL_SECONDS = 30
 # Thread-safe dictionary for active ffmpeg processes
 active_streams = {}
 lock = threading.Lock()
+
+# --- Middleware para Correlation ID ---
+@app.before_request
+def before_request():
+    # Generate or extract correlation ID
+    correlation_id = request.headers.get('X-Correlation-ID') or generate_correlation_id()
+    g.correlation_id = correlation_id
+    
+    # Set correlation ID in logger context
+    logger.set_correlation_id(correlation_id)
+    
+    # Log request start
+    logger.info(
+        "Request started",
+        context={
+            'method': request.method,
+            'path': request.path,
+            'remote_addr': request.remote_addr,
+            'user_agent': request.headers.get('User-Agent', 'Unknown')
+        }
+    )
+    g.request_start_time = time.time()
+
+@app.after_request
+def after_request(response):
+    # Calculate request duration
+    duration_ms = (time.time() - g.request_start_time) * 1000
+    
+    # Log request completion
+    logger.info(
+        "Request completed",
+        context={
+            'method': request.method,
+            'path': request.path,
+            'status_code': response.status_code,
+            'content_length': response.content_length
+        },
+        duration_ms=duration_ms
+    )
+    
+    # Add correlation ID to response headers
+    response.headers['X-Correlation-ID'] = g.correlation_id
+    return response
 
 # --- Reaper Thread ---
 def reaper_thread():
@@ -33,18 +90,43 @@ def reaper_thread():
             for channel_id, stream_info in active_streams.items():
                 time_since_heartbeat = datetime.now(timezone.utc) - stream_info['last_heartbeat']
                 if time_since_heartbeat > timedelta(seconds=HEARTBEAT_TIMEOUT_SECONDS):
-                    app.logger.info(f"Reaping stream for channel {channel_id} due to heartbeat timeout.")
+                    logger.info(
+                        "Reaping stream due to heartbeat timeout",
+                        context={
+                            'channel_id': channel_id,
+                            'time_since_heartbeat_seconds': time_since_heartbeat.total_seconds(),
+                            'timeout_threshold': HEARTBEAT_TIMEOUT_SECONDS
+                        }
+                    )
                     try:
                         stream_info['process'].kill()
                         stream_info['process'].wait() # Wait for the process to terminate
                         # Clean up HLS files
                         hls_output_dir = f"/mnt/media/streams/hls/{channel_id}"
                         # This is a simple cleanup, a more robust solution would be needed for production
-                        for f in os.listdir(hls_output_dir):
-                            os.remove(os.path.join(hls_output_dir, f))
-                        os.rmdir(hls_output_dir)
+                        if os.path.exists(hls_output_dir):
+                            for f in os.listdir(hls_output_dir):
+                                os.remove(os.path.join(hls_output_dir, f))
+                            os.rmdir(hls_output_dir)
+                        
+                        logger.info(
+                            "Stream cleanup completed",
+                            context={
+                                'channel_id': channel_id,
+                                'hls_output_dir': hls_output_dir
+                            }
+                        )
+                        logger.audit("stream_reaped", channel_id, context={
+                            'reason': 'heartbeat_timeout',
+                            'timeout_seconds': time_since_heartbeat.total_seconds()
+                        })
                     except Exception as e:
-                        app.logger.error(f"Error killing process for channel {channel_id}: {e}")
+                        logger.error(
+                            "Error killing stream process",
+                            error=e,
+                            context={'channel_id': channel_id},
+                            severity="operational"
+                        )
                     channel_ids_to_reap.append(channel_id)
 
             # Remove reaped streams from the dictionary
@@ -54,11 +136,6 @@ def reaper_thread():
         time.sleep(REAPER_INTERVAL_SECONDS)
 
 # --- API Endpoints ---
-@app.route('/health')
-def health_check():
-    """Health check endpoint."""
-    return jsonify({"status": "healthy"}), 200
-
 @app.route('/play/<string:channel_id>/live.m3u8')
 def play_channel(channel_id):
     """
@@ -117,11 +194,29 @@ def play_channel(channel_id):
                 'last_heartbeat': now_utc
             }
 
-        app.logger.info(f"Started stream for channel {channel_id} with PID {process.pid}")
+        logger.info(
+            "Stream started successfully",
+            context={
+                'channel_id': channel_id,
+                'process_pid': process.pid,
+                'media_file_path': media_file_path,
+                'offset_seconds': offset,
+                'hls_output_dir': hls_output_dir
+            }
+        )
+        logger.audit("stream_started", channel_id, context={
+            'media_item_id': program['media_item_id'],
+            'offset_seconds': offset
+        })
         return f"/hls/{channel_id}/live.m3u8", 302
 
     except Exception as e:
-        app.logger.error(f"Error starting stream for channel {channel_id}: {e}")
+        logger.error(
+            "Error starting stream for channel",
+            error=e,
+            context={'channel_id': channel_id},
+            severity="operational"
+        )
         abort(500, description="Internal server error")
     finally:
         if conn:
@@ -135,8 +230,16 @@ def heartbeat(channel_id):
     with lock:
         if channel_id in active_streams:
             active_streams[channel_id]['last_heartbeat'] = datetime.now(timezone.utc)
+            logger.debug(
+                "Heartbeat received for active stream",
+                context={'channel_id': channel_id}
+            )
             return jsonify({"status": "ok"}), 200
         else:
+            logger.warning(
+                "Heartbeat received for non-existent stream",
+                context={'channel_id': channel_id}
+            )
             return jsonify({"status": "error", "message": "stream_not_found"}), 404
 
 if __name__ == "__main__":

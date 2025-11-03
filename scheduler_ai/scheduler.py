@@ -6,7 +6,16 @@ import json
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from shared.db import get_db_connection
+from shared.logging_config import configure_logging, get_logger, generate_correlation_id, CorrelationContext
+from shared.config import Config
 from scheduler_ai.engine import process_scheduling_rules
+
+# --- Configuração ---
+service_config = Config.get_service_config()
+
+# Configure logging
+configure_logging(service_config['name'])
+logger = get_logger(service_config['name'])
 
 def fetch_scheduling_rules(conn):
     """
@@ -30,7 +39,13 @@ def clear_epg_for_channels(conn, channel_ids):
     """
     Limpa a EPG futura para os canais especificados.
     """
-    print(f"Clearing future EPG for channels: {list(channel_ids)}")
+    logger.info(
+        "Clearing future EPG for channels",
+        context={
+            'channel_ids': list(channel_ids),
+            'channel_count': len(channel_ids)
+        }
+    )
     with conn.cursor() as cur:
         # Estamos limpando a partir de agora para não afetar o histórico
         cur.execute(
@@ -42,7 +57,13 @@ def save_epg_entries(conn, epg_entries):
     """
     Salva as novas entradas da EPG no banco de dados.
     """
-    print(f"Saving {len(epg_entries)} new EPG entries...")
+    logger.info(
+        "Saving EPG entries to database",
+        context={
+            'entry_count': len(epg_entries),
+            'operation': 'epg_save'
+        }
+    )
     with conn.cursor() as cur:
         for entry in epg_entries:
             cur.execute(
@@ -64,7 +85,13 @@ def update_program_states(conn, updated_states):
     """
     Atualiza o campo program_state para as regras que mudaram.
     """
-    print(f"Updating {len(updated_states)} program states...")
+    logger.info(
+        "Updating program states",
+        context={
+            'state_count': len(updated_states),
+            'rule_ids': list(updated_states.keys())
+        }
+    )
     with conn.cursor() as cur:
         for rule_id, new_state in updated_states.items():
             cur.execute(
@@ -76,42 +103,71 @@ def main():
     """
     Função principal para executar o agendador.
     """
-    print("Scheduler AI starting...")
-    conn = None
-    try:
-        conn = get_db_connection()
-        print("Database connection established successfully.")
+    # Generate correlation ID for this scheduling run
+    correlation_id = generate_correlation_id()
+    with CorrelationContext(correlation_id):
+        logger.info("Scheduler AI starting...")
+        conn = None
+        try:
+            conn = get_db_connection()
+            logger.info("Database connection established successfully.")
 
-        # 1. Buscar dados do banco de dados
-        rules = fetch_scheduling_rules(conn)
-        print(f"Found {len(rules)} active scheduling rules.")
+            # 1. Buscar dados do banco de dados
+            rules = fetch_scheduling_rules(conn)
+            logger.info(
+                "Active scheduling rules retrieved",
+                context={'rules_count': len(rules)}
+            )
 
-        media_items = fetch_media_items(conn)
-        print(f"Found {len(media_items)} processed media items.")
+            media_items = fetch_media_items(conn)
+            logger.info(
+                "Processed media items retrieved",
+                context={'media_items_count': len(media_items)}
+            )
 
-        # 2. Chamar o motor de agendamento para gerar a programação
-        epg_entries, updated_states = process_scheduling_rules(rules, media_items)
+            # 2. Chamar o motor de agendamento para gerar a programação
+            logger.info("Starting scheduling engine processing")
+            epg_entries, updated_states = process_scheduling_rules(rules, media_items)
 
-        # 3. Salvar os resultados no banco de dados
-        if epg_entries:
-            channel_ids_to_clear = {e['channel_id'] for e in epg_entries}
-            clear_epg_for_channels(conn, channel_ids_to_clear)
-            save_epg_entries(conn, epg_entries)
+            # 3. Salvar os resultados no banco de dados
+            if epg_entries:
+                channel_ids_to_clear = {e['channel_id'] for e in epg_entries}
+                clear_epg_for_channels(conn, channel_ids_to_clear)
+                save_epg_entries(conn, epg_entries)
+                
+                logger.audit("epg_updated", "epg_virtual", context={
+                    'entries_count': len(epg_entries),
+                    'channels_affected': len(channel_ids_to_clear)
+                })
 
-        if updated_states:
-            update_program_states(conn, updated_states)
+            if updated_states:
+                update_program_states(conn, updated_states)
+                
+                logger.audit("program_states_updated", "channel_master_grid", context={
+                    'rules_updated': len(updated_states)
+                })
 
-        conn.commit()
-        print("Successfully saved new EPG and program states to the database.")
+            conn.commit()
+            logger.info(
+                "Scheduling operation completed successfully",
+                context={
+                    'epg_entries_created': len(epg_entries) if epg_entries else 0,
+                    'program_states_updated': len(updated_states) if updated_states else 0
+                }
+            )
 
-    except Exception as e:
-        if conn:
-            conn.rollback()
-        print(f"An error occurred: {e}")
-    finally:
-        if conn:
-            conn.close()
-            print("Database connection closed.")
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            logger.error(
+                "Scheduling operation failed",
+                error=e,
+                severity="critical"
+            )
+        finally:
+            if conn:
+                conn.close()
+                logger.debug("Database connection closed")
 
 if __name__ == "__main__":
     main()

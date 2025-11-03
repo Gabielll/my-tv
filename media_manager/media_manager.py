@@ -1,6 +1,5 @@
 import os
 import time
-import logging
 import psycopg2
 import sys
 from watchdog.observers import Observer
@@ -10,13 +9,19 @@ from watchdog.events import FileSystemEventHandler
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from shared import rabbitmq_client
 from shared.db import get_db_connection
+from shared.logging_config import configure_logging, get_logger, generate_correlation_id, CorrelationContext
+from shared.config import Config
 
 # --- Configuração ---
-# Obtém as configurações do ambiente ou usa valores padrão
-STAGING_DIR = os.getenv('STAGING_DIR', '/mnt/media/staging_ingest')
-ALLOWED_EXTENSIONS = {'.mkv', '.mp4', '.avi', '.mov'}
+service_config = Config.get_service_config()
+media_config = Config.get_media_config()
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+# Configure logging
+configure_logging(service_config['name'])
+logger = get_logger(service_config['name'])
+
+STAGING_DIR = media_config['staging_dir']
+ALLOWED_EXTENSIONS = set(media_config['allowed_extensions'])
 
 # --- Lógica do Manipulador de Eventos ---
 class NewFileHandler(FileSystemEventHandler):
@@ -31,14 +36,29 @@ class NewFileHandler(FileSystemEventHandler):
         _, extension = os.path.splitext(filename)
 
         if extension.lower() in ALLOWED_EXTENSIONS:
-            logging.info(f"Novo arquivo de mídia detectado: {filename}")
-            self.process_new_media(file_path)
+            # Generate correlation ID for this file processing
+            correlation_id = generate_correlation_id()
+            with CorrelationContext(correlation_id):
+                logger.info(
+                    "New media file detected",
+                    context={
+                        'filename': filename,
+                        'file_path': file_path,
+                        'extension': extension,
+                        'file_size_bytes': os.path.getsize(file_path) if os.path.exists(file_path) else 0
+                    }
+                )
+                self.process_new_media(file_path)
 
     def process_new_media(self, file_path):
         """Processa um novo arquivo de mídia: o adiciona ao banco de dados."""
         conn = get_db_connection()
         if not conn:
-            logging.error(f"Não foi possível processar '{file_path}' devido a um erro de conexão com o BD.")
+            logger.error(
+                "Database connection failed for media processing",
+                context={'file_path': file_path},
+                severity="critical"
+            )
             return
 
         try:
@@ -46,7 +66,10 @@ class NewFileHandler(FileSystemEventHandler):
                 # Verifica se o arquivo já existe para evitar duplicatas
                 cur.execute("SELECT id FROM media_items WHERE original_file_path = %s;", (file_path,))
                 if cur.fetchone():
-                    logging.warning(f"O arquivo '{file_path}' já existe no banco de dados. Ignorando.")
+                    logger.warning(
+                        "Duplicate file detected, skipping processing",
+                        context={'file_path': file_path}
+                    )
                     return
 
                 # Insere o novo item de mídia
@@ -63,14 +86,40 @@ class NewFileHandler(FileSystemEventHandler):
                 )
                 media_item_id = cur.fetchone()[0]
                 conn.commit()
-                logging.info(f"Arquivo '{file_path}' inserido no BD com o ID: {media_item_id}")
+                
+                logger.info(
+                    "Media item inserted into database",
+                    context={
+                        'file_path': file_path,
+                        'media_item_id': media_item_id,
+                        'title': title,
+                        'status': 'pending_enrichment'
+                    }
+                )
+                logger.audit("media_item_created", str(media_item_id), context={
+                    'file_path': file_path,
+                    'title': title
+                })
 
                 # Publica uma mensagem na fila para o próximo estágio (enriquecimento)
                 message = str(media_item_id)
                 rabbitmq_client.publish_message('enrichment_jobs', message)
+                
+                logger.info(
+                    "Message published to enrichment queue",
+                    context={
+                        'media_item_id': media_item_id,
+                        'queue': 'enrichment_jobs'
+                    }
+                )
 
         except Exception as e:
-            logging.error(f"Erro ao processar o arquivo '{file_path}': {e}")
+            logger.error(
+                "Failed to process media file",
+                error=e,
+                context={'file_path': file_path},
+                severity="operational"
+            )
             if conn:
                 conn.rollback()
         finally:
@@ -80,23 +129,23 @@ class NewFileHandler(FileSystemEventHandler):
 # --- Execução Principal ---
 if __name__ == "__main__":
     if not os.path.exists(STAGING_DIR):
-        logging.info(f"O diretório de staging '{STAGING_DIR}' não existe. Criando...")
+        logger.info(f"O diretório de staging '{STAGING_DIR}' não existe. Criando...")
         os.makedirs(STAGING_DIR)
 
-    logging.info(f"Monitorando o diretório: {STAGING_DIR}")
+    logger.info(f"Monitorando o diretório: {STAGING_DIR}")
 
     event_handler = NewFileHandler()
     observer = Observer()
     observer.schedule(event_handler, STAGING_DIR, recursive=True)
 
     observer.start()
-    logging.info("Media Manager iniciado.")
+    logger.info("Media Manager iniciado.")
 
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         observer.stop()
-        logging.info("Media Manager parado.")
+        logger.info("Media Manager parado.")
 
     observer.join()
