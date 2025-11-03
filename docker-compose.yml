@@ -52,13 +52,13 @@ services:
       "
 
   # --- Application Services ---
-  media-manager:
+  media_manager:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        SERVICE_DIR: media-manager
-        REQUIREMENTS_FILE: media-manager/requirements.txt
+        SERVICE_DIR: media_manager
+        REQUIREMENTS_FILE: media_manager/requirements.txt
     command: python media_manager.py
     environment: &app-env
       DB_HOST: db
@@ -78,13 +78,13 @@ services:
       rabbitmq:
         condition: service_healthy
 
-  metadata-enricher:
+  metadata_enricher:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        SERVICE_DIR: metadata-enricher
-        REQUIREMENTS_FILE: metadata-enricher/requirements.txt
+        SERVICE_DIR: metadata_enricher
+        REQUIREMENTS_FILE: metadata_enricher/requirements.txt
     command: python metadata_enricher.py
     environment: *app-env
     depends_on:
@@ -93,13 +93,13 @@ services:
       rabbitmq:
         condition: service_healthy
 
-  normalization-worker:
+  normalization_worker:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        SERVICE_DIR: normalization-worker
-        REQUIREMENTS_FILE: normalization-worker/requirements.txt
+        SERVICE_DIR: normalization_worker
+        REQUIREMENTS_FILE: normalization_worker/requirements.txt
     command: python normalization_worker.py
     environment: *app-env
     volumes:
@@ -110,13 +110,13 @@ services:
       rabbitmq:
         condition: service_healthy
 
-  scene-analyzer:
+  scene_analyzer:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        SERVICE_DIR: scene-analyzer
-        REQUIREMENTS_FILE: scene-analyzer/requirements.txt
+        SERVICE_DIR: scene_analyzer
+        REQUIREMENTS_FILE: scene_analyzer/requirements.txt
     command: python scene_analyzer.py
     environment: *app-env
     volumes:
@@ -127,9 +127,9 @@ services:
       rabbitmq:
         condition: service_healthy
 
-  admin-ui:
+  admin_ui:
     build:
-      context: ./admin-ui
+      context: ./admin_ui
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
@@ -138,9 +138,9 @@ services:
     environment:
       STAGING_DIR: /mnt/media/staging_ingest
     depends_on:
-      - media-manager
+      - media_manager
 
-  scheduler-ai:
+  scheduler_ai:
     build:
       context: .
       dockerfile: Dockerfile
@@ -178,7 +178,7 @@ services:
       - media_volume:/mnt/media/streams:ro
     depends_on:
       - stream-api
-      - admin-ui
+      - admin_ui
 
 volumes:
   rabbitmq_data:

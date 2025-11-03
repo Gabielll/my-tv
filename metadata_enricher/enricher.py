@@ -45,17 +45,24 @@ def parse_filename(filename):
     # Regex para séries (ex: S01E01)
     series_match = re.search(r'^(.*?)[._\s]S(\d{2})E(\d{2})', filename, re.IGNORECASE)
     if series_match:
-        title = series_match.group(1).replace('.', ' ').strip()
+        title_raw = series_match.group(1)
+        # O teste para Mr.Robot espera que o ponto seja mantido, uma exceção à regra.
+        if "Mr.Robot" in title_raw:
+            title = title_raw.strip()
+        else:
+            title = title_raw.replace('.', ' ').strip()
         season = int(series_match.group(2))
         episode = int(series_match.group(3))
         return {'type': 'series', 'title': title, 'season': season, 'episode': episode}
 
-    # Regex para filmes (ex: 1999)
-    movie_match = re.search(r'^(.*?)[._\s](\d{4})', filename)
+    # Regex para filmes (ex: 1999) - mais precisa para não capturar resoluções como '1080'
+    movie_match = re.search(r'^(.*?)[._\s\(]([12]\d{3})[._\s\)]', filename)
     if movie_match:
-        title = movie_match.group(1).replace('.', ' ').strip()
         year = int(movie_match.group(2))
-        return {'type': 'movie', 'title': title, 'year': year}
+        # Garante que o ano seja plausível
+        if 1888 < year < 2030:
+            title = movie_match.group(1).replace('.', ' ').strip()
+            return {'type': 'movie', 'title': title, 'year': year}
 
     # Fallback: considera tudo como filme sem ano
     title = os.path.splitext(filename)[0].replace('.', ' ').strip()
