@@ -34,3 +34,9 @@ Este documento rastreia o progresso atual no roteiro de construção do software
 ## Próximos Passos
 
 O desenvolvimento principal está concluído. Os próximos passos podem incluir a adição de mais regras de agendamento, melhorias na interface do usuário ou a implementação de monitoramento.
+
+---
+
+## Convenções de Código
+
+- **Nomenclatura de Diretórios de Microsserviços:** Para garantir que os microsserviços Python possam ser importados como pacotes (especialmente para fins de teste), todos os diretórios de serviço devem usar o formato `snake_case` (ex: `media_manager`) em vez de `kebab-case` (ex: `media-manager`). Esta refatoração foi aplicada a todos os serviços existentes.
