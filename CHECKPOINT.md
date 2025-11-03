@@ -37,6 +37,11 @@ O desenvolvimento principal está concluído. Os próximos passos podem incluir 
 
 ---
 
-## Convenções de Código
+## Notas de Teste e Convenções
 
-- **Nomenclatura de Diretórios de Microsserviços:** Para garantir que os microsserviços Python possam ser importados como pacotes (especialmente para fins de teste), todos os diretórios de serviço devem usar o formato `snake_case` (ex: `media_manager`) em vez de `kebab-case` (ex: `media-manager`). Esta refatoração foi aplicada a todos os serviços existentes.
+- **Nomenclatura de Diretórios de Microsserviços:** Para garantir a capacidade de teste, todos os diretórios de serviço Python devem usar o formato `snake_case` (ex: `media_manager`). Esta refatoração foi aplicada a todos os serviços existentes.
+
+- **Teste de Fluxo E2E Híbrido:** Devido a limitações no ambiente de CI/CD que podem impedir o `docker-compose up` completo, foi criado um teste de fluxo E2E híbrido (`tests/test_e2e_hybrid.py`). Este teste valida a comunicação ponta a ponta entre os serviços e a lógica da aplicação, mas com as seguintes ressalvas:
+  - **Banco de Dados:** Utiliza um banco de dados SQLite em memória em vez do CockroachDB.
+  - **Rede:** Executa os serviços como processos locais, não em uma rede Docker.
+  - **Componentes Não Testados:** Não valida a configuração do Nginx nem a interação específica com o CockroachDB. A validação completa destes componentes depende da execução dos testes E2E padrão (`tests/test_e2e_*.py`).
