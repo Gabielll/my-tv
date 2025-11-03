@@ -27,10 +27,14 @@ def mock_rabbitmq_client(mocker):
 def mock_subprocess(mocker):
     """Fixture que simula o subprocess.Popen usado pelo ffmpeg."""
     mock_proc = MagicMock()
+    mock_proc.wait.return_value = None
+    mock_proc.returncode = 0
+    mock_proc.stderr = iter([])  # Simula stderr vazio
     mocker.patch('subprocess.Popen', return_value=mock_proc)
     # Mock para interações com o sistema de arquivos
     mocker.patch('os.path.exists', return_value=True)
     mocker.patch('os.makedirs')
+    mocker.patch('os.path.getsize', return_value=1024)  # Mock file size
     return mock_proc
 
 # --- Testes ---

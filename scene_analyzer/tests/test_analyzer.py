@@ -125,7 +125,7 @@ def test_process_message_success(mock_db_connection, mocker):
         call("SELECT file_path FROM media_items WHERE id = %s;", (media_item_id,)),
         call("INSERT INTO cue_points (media_item_id, cue_time, cue_type) VALUES (%s, %s, %s);", (media_item_id, 10.5, 'commercial_break')),
         call("INSERT INTO cue_points (media_item_id, cue_time, cue_type) VALUES (%s, %s, %s);", (media_item_id, 30.0, 'commercial_break')),
-        call("UPDATE media_items SET status = %s WHERE id = %s;", ('complete', media_item_id))
+        call("UPDATE media_items SET status = %s WHERE id = %s;", ('processed', media_item_id))
     ]
     mock_cur.execute.assert_has_calls(calls, any_order=False)
     assert mock_conn.commit.call_count == 2 # Um commit após 'analyzing', outro no final
@@ -157,7 +157,7 @@ def test_process_message_no_cue_points(mock_db_connection, mocker):
     calls = [
         call("UPDATE media_items SET status = 'analyzing' WHERE id = %s;", (media_item_id,)),
         call("SELECT file_path FROM media_items WHERE id = %s;", (media_item_id,)),
-        call("UPDATE media_items SET status = %s WHERE id = %s;", ('complete', media_item_id))
+        call("UPDATE media_items SET status = %s WHERE id = %s;", ('processed', media_item_id))
     ]
     mock_cur.execute.assert_has_calls(calls, any_order=False)
 

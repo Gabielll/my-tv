@@ -24,6 +24,7 @@ def test_upload_success_single_file(client, mocker):
     # Arrange
     mocker.patch('os.makedirs') # Mock para não criar diretórios
     mock_save = mocker.patch('werkzeug.datastructures.FileStorage.save')
+    mocker.patch('os.path.getsize', return_value=1024)  # Mock file size
 
     data = {
         'mediafiles': (io.BytesIO(b"dummy file content"), 'test_video.mp4')
@@ -45,6 +46,7 @@ def test_upload_success_multiple_files(client, mocker):
     # Arrange
     mocker.patch('os.makedirs')
     mock_save = mocker.patch('werkzeug.datastructures.FileStorage.save')
+    mocker.patch('os.path.getsize', return_value=2048)  # Mock file size
 
     data = {
         'mediafiles': [
