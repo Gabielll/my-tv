@@ -9,34 +9,14 @@ from watchdog.events import FileSystemEventHandler
 # Adiciona o diretório pai ao sys.path para permitir a importação de 'shared'
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from shared import rabbitmq_client
+from shared.db import get_db_connection
 
 # --- Configuração ---
 # Obtém as configurações do ambiente ou usa valores padrão
 STAGING_DIR = os.getenv('STAGING_DIR', '/mnt/media/staging_ingest')
-DB_HOST = os.getenv('DB_HOST', 'localhost')
-DB_PORT = os.getenv('DB_PORT', '5432')
-DB_NAME = os.getenv('DB_NAME', 'media_server')
-DB_USER = os.getenv('DB_USER', 'user')
-DB_PASSWORD = os.getenv('DB_PASSWORD', 'password')
 ALLOWED_EXTENSIONS = {'.mkv', '.mp4', '.avi', '.mov'}
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-
-# --- Funções de Conexão ---
-def get_db_connection():
-    """Cria e retorna uma nova conexão com o banco de dados."""
-    try:
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD
-        )
-        return conn
-    except psycopg2.OperationalError as e:
-        logging.error(f"Não foi possível conectar ao banco de dados: {e}")
-        return None
 
 # --- Lógica do Manipulador de Eventos ---
 class NewFileHandler(FileSystemEventHandler):
@@ -70,11 +50,7 @@ class NewFileHandler(FileSystemEventHandler):
                     return
 
                 # Insere o novo item de mídia
-                # O título é inicialmente o nome do arquivo sem extensão
                 title = os.path.splitext(os.path.basename(file_path))[0]
-
-                # O file_path final será definido pelo normalization-worker
-                # Por enquanto, usamos um placeholder.
                 final_path_placeholder = f"/mnt/media/normalized/{os.path.basename(file_path)}"
 
                 cur.execute(

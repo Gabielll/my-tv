@@ -7,28 +7,12 @@ import sys
 # Adiciona o diretório pai ao sys.path para permitir a importação de 'shared'
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from shared import rabbitmq_client
+from shared.db import get_db_connection
 
 # --- Configuração ---
-DB_HOST = os.getenv('DB_HOST', 'localhost')
-DB_PORT = os.getenv('DB_PORT', '5432')
-DB_NAME = os.getenv('DB_NAME', 'media_server')
-DB_USER = os.getenv('DB_USER', 'user')
-DB_PASSWORD = os.getenv('DB_PASSWORD', 'password')
 NORMALIZED_DIR = os.getenv('NORMALIZED_DIR', '/mnt/media/normalized')
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# --- Funções de Conexão ---
-def get_db_connection():
-    """Cria e retorna uma nova conexão com o banco de dados."""
-    try:
-        conn = psycopg2.connect(
-            host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD
-        )
-        return conn
-    except psycopg2.OperationalError as e:
-        logging.error(f"Não foi possível conectar ao banco de dados: {e}")
-        return None
 
 # --- Lógica do Worker ---
 def normalize_media(input_path, output_path):
@@ -42,14 +26,6 @@ def normalize_media(input_path, output_path):
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    # Comando ffmpeg:
-    # -i: arquivo de entrada
-    # -c:v libx264: codec de vídeo H.264
-    # -preset veryfast: equilíbrio entre velocidade e qualidade
-    # -crf 23: qualidade de vídeo (menor é melhor)
-    # -c:a aac: codec de áudio AAC
-    # -b:a 128k: bitrate de áudio
-    # -y: sobrescreve o arquivo de saída se ele existir
     command = [
         'ffmpeg',
         '-i', input_path,
@@ -64,14 +40,12 @@ def normalize_media(input_path, output_path):
 
     try:
         logging.info(f"Iniciando a normalização para: {input_path}")
-        # Usamos Popen para não bloquear e poderemos, no futuro, monitorar o progresso
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-        # Loga a saída do ffmpeg (útil para depuração)
         for line in process.stderr:
             logging.debug(f"ffmpeg: {line.strip()}")
 
-        process.wait() # Espera o processo terminar
+        process.wait()
 
         if process.returncode == 0:
             logging.info(f"Normalização concluída com sucesso: {output_path}")
@@ -103,11 +77,9 @@ def process_message(message_body):
 
     try:
         with conn.cursor() as cur:
-            # Marca o item como 'processing'
             cur.execute("UPDATE media_items SET status = 'normalizing' WHERE id = %s;", (media_item_id,))
             conn.commit()
 
-            # 1. Obter o caminho do arquivo original
             cur.execute("SELECT original_file_path FROM media_items WHERE id = %s;", (media_item_id,))
             result = cur.fetchone()
             if not result:
@@ -116,30 +88,23 @@ def process_message(message_body):
 
             original_path = result[0]
 
-            # 2. Definir o novo caminho e executar a normalização
-            filename = os.path.basename(original_path)
-            # Troca a extensão para .mp4, que é o nosso container padrão
-            base_filename, _ = os.path.splitext(filename)
+            base_filename, _ = os.path.splitext(os.path.basename(original_path))
             normalized_filename = f"{base_filename}.mp4"
             normalized_path = os.path.join(NORMALIZED_DIR, normalized_filename)
 
             success = normalize_media(original_path, normalized_path)
 
-            # 3. Atualizar o BD
             if success:
                 cur.execute(
                     "UPDATE media_items SET file_path = %s, status = %s WHERE id = %s;",
                     (normalized_path, 'pending_analysis', media_item_id)
                 )
-                logging.info(f"BD atualizado. Novo file_path para ID {media_item_id} é '{normalized_path}'.")
-                # Publica na próxima fila
                 rabbitmq_client.publish_message('scene_analysis_jobs', str(media_item_id))
             else:
                 cur.execute(
                     "UPDATE media_items SET status = %s WHERE id = %s;",
                     ('normalization_failed', media_item_id)
                 )
-                logging.error(f"Falha ao normalizar ID {media_item_id}. Status atualizado para 'normalization_failed'.")
 
             conn.commit()
 
