@@ -4,8 +4,14 @@ FROM python:3.9-slim
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy the application files into the container
-COPY . /app
+# Set the PYTHONPATH environment variable to allow imports from the root
+ENV PYTHONPATH "${PYTHONPATH}:/app"
+
+# Copy the shared library first to leverage Docker layer caching
+COPY shared/ /app/shared/
+
+# Copy the admin_ui application files
+COPY admin_ui/ /app/
 
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt

@@ -10,9 +10,10 @@ def get_db_connection():
     try:
         conn = psycopg2.connect(
             host=os.getenv("DB_HOST", "localhost"),
+            port=os.getenv("DB_PORT", "26257"),  # CockroachDB default port
             dbname=os.getenv("DB_NAME", "media_server"),
-            user=os.getenv("DB_USER", "postgres"),
-            password=os.getenv("DB_PASSWORD", "postgres"),
+            user=os.getenv("DB_USER", "root"),  # CockroachDB default user
+            password=os.getenv("DB_PASSWORD", ""),  # CockroachDB no password by default
             cursor_factory=DictCursor
         )
         return conn

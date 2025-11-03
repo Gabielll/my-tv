@@ -5,13 +5,14 @@ import os
 import subprocess
 import json
 from datetime import datetime
+import random
 
 # --- Configuração do Teste E2E ---
 DB_HOST = "localhost"
-DB_PORT = "5432"
+DB_PORT = "26257"  # CockroachDB port
 DB_NAME = "media_server"
-DB_USER = "user"
-DB_PASSWORD = "password"
+DB_USER = "root"  # CockroachDB default user
+DB_PASSWORD = ""  # CockroachDB no password
 
 # --- Funções Auxiliares ---
 
@@ -32,7 +33,7 @@ def get_db_connection():
 def cleanup_db(conn, channel_id, media_item_ids):
     """Limpa os dados de teste do banco de dados."""
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM epg_virtual WHERE channel_id = %s;", (channel_id,))
+        cur.execute("DELETE FROM epg_virtual WHERE channel_id = %s;", (f"e2e_test_channel_{channel_id}",))
         cur.execute("DELETE FROM channel_master_grid WHERE id = %s;", (channel_id,))
         cur.execute("DELETE FROM media_items WHERE id = ANY(%s);", (media_item_ids,))
     conn.commit()
@@ -46,7 +47,9 @@ def test_scheduling_flow():
     Este teste assume que o ambiente (docker-compose) está em execução.
     """
     conn = get_db_connection()
-    channel_id = 9999 # ID de teste para o canal
+    # Usar timestamp para garantir IDs únicos
+    timestamp = int(time.time())
+    channel_id = 9999 + timestamp % 1000  # ID de teste único para o canal
     media_item_ids = []
 
     try:
@@ -63,11 +66,11 @@ def test_scheduling_flow():
                 }
                 cur.execute(
                     """
-                    INSERT INTO media_items (title, status, metadata)
-                    VALUES (%s, 'processed', %s)
+                    INSERT INTO media_items (title, status, metadata, file_path)
+                    VALUES (%s, 'processed', %s, %s)
                     RETURNING id;
                     """,
-                    (title, json.dumps(metadata))
+                    (title, json.dumps(metadata), f"/fake/path/{timestamp}_{title}.mp4")
                 )
                 media_item_ids.append(cur.fetchone()[0])
 
@@ -85,10 +88,10 @@ def test_scheduling_flow():
             }
             cur.execute(
                 """
-                INSERT INTO channel_master_grid (id, channel_name, is_active, rules, program_state)
-                VALUES (%s, 'e2e_test_channel', true, %s, %s);
+                INSERT INTO channel_master_grid (id, channel_id, channel_name, is_active, rules, program_state)
+                VALUES (%s, %s, 'e2e_test_channel', true, %s, %s);
                 """,
-                (channel_id, json.dumps(rule_details), json.dumps(program_state))
+                (channel_id, f"e2e_test_channel_{channel_id}", json.dumps(rule_details), json.dumps(program_state))
             )
         conn.commit()
         print(f"Dados de teste inseridos. Canal: {channel_id}, Mídias: {media_item_ids}")
@@ -107,7 +110,7 @@ def test_scheduling_flow():
         # 3. (Assert) Verificar os resultados no banco de dados
         with conn.cursor() as cur:
             # Verificar se a EPG foi criada para os próximos 7 dias
-            cur.execute("SELECT COUNT(*) FROM epg_virtual WHERE channel_id = %s;", (channel_id,))
+            cur.execute("SELECT COUNT(*) FROM epg_virtual WHERE channel_id = %s;", (f"e2e_test_channel_{channel_id}",))
             epg_count = cur.fetchone()[0]
             # O motor do scheduler agenda para 7 dias no futuro
             assert epg_count > 0, "A EPG não foi criada para o canal de teste."

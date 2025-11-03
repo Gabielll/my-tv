@@ -41,15 +41,14 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ./:/app/
+      - ./database_schema_cockroach.sql:/schema.sql
+    entrypoint: ["/bin/bash", "-c"]
     command: >
-      sh -c "
-        echo 'Waiting for DB to be ready...';
-        sleep 5;
-        /cockroach/cockroach sql --insecure --host=db -e 'CREATE DATABASE IF NOT EXISTS media_server;';
-        /cockroach/cockroach sql --insecure --host=db --database=media_server -f /app/database_schema.sql;
-        echo 'Database initialized.';
-      "
+      "echo 'Waiting for DB to be ready...' &&
+       sleep 5 &&
+       /cockroach/cockroach sql --insecure --host=db -e 'CREATE DATABASE IF NOT EXISTS media_server;' &&
+       /cockroach/cockroach sql --insecure --host=db --database=media_server -f /schema.sql &&
+       echo 'Database initialized.'"
 
   # --- Application Services ---
   media_manager:
@@ -129,8 +128,8 @@ services:
 
   admin_ui:
     build:
-      context: ./admin_ui
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: admin_ui/Dockerfile
     ports:
       - "8000:8000"
     volumes:
@@ -138,7 +137,8 @@ services:
     environment:
       STAGING_DIR: /mnt/media/staging_ingest
     depends_on:
-      - media_manager
+      - db
+      - rabbitmq
 
   scheduler_ai:
     build:
@@ -157,8 +157,8 @@ services:
 
   stream-api:
     build:
-      context: ./stream_api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: stream_api/Dockerfile
     ports:
       - "8001:8001"
     volumes:

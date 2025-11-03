@@ -9,10 +9,10 @@ import io
 # Estas variáveis devem corresponder às configurações no seu docker-compose.yml
 ADMIN_UI_URL = "http://localhost:8000"
 DB_HOST = "localhost"
-DB_PORT = "5432"
+DB_PORT = "26257"  # CockroachDB port
 DB_NAME = "media_server"
-DB_USER = "user"
-DB_PASSWORD = "password"
+DB_USER = "root"  # CockroachDB default user
+DB_PASSWORD = ""  # CockroachDB no password
 
 # --- Funções Auxiliares ---
 
