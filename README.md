@@ -29,4 +29,11 @@ To stop the services, run:
 
 ```bash
 docker-compose down
+
+## Documentation
+
+For detailed instructions on how to set up, use, and deploy the project, please refer to the following guides:
+
+*   **[GUIDE.md](GUIDE.md):** A comprehensive guide to setting up the project locally, understanding its features, and day-to-day usage.
+*   **[DEPLOY_GUIDE.md](DEPLOY_GUIDE.md):** Step-by-step instructions for deploying the project to Render's free tier.
 ```

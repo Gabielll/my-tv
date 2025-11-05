@@ -1,0 +1,274 @@
+services:
+  # --- Web Services ---
+  - name: admin-ui
+    type: web
+    env: python
+    dockerfilePath: ./admin_ui/Dockerfile
+    envVars:
+      - key: DB_HOST
+        value: ${DB_HOST}
+      - key: DB_PORT
+        value: ${DB_PORT}
+      - key: DB_NAME
+        value: ${DB_NAME}
+      - key: DB_USER
+        value: ${DB_USER}
+      - key: DB_PASSWORD
+        value: ${DB_PASSWORD}
+      - key: RABBITMQ_HOST
+        value: ${RABBITMQ_HOST}
+      - key: RABBITMQ_USER
+        value: ${RABBITMQ_USER}
+      - key: RABBITMQ_PASS
+        value: ${RABBITMQ_PASS}
+      - key: STAGING_DIR
+        value: /mnt/media/staging_ingest
+      - key: SERVICE_NAME
+        value: admin_ui
+      - key: SERVICE_VERSION
+        value: "1.0.0"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+      - key: ENVIRONMENT
+        value: production
+    healthCheckPath: /health
+
+  - name: stream-api
+    type: web
+    env: python
+    dockerfilePath: ./stream_api/Dockerfile
+    envVars:
+      - key: DB_HOST
+        value: ${DB_HOST}
+      - key: DB_PORT
+        value: ${DB_PORT}
+      - key: DB_NAME
+        value: ${DB_NAME}
+      - key: DB_USER
+        value: ${DB_USER}
+      - key: DB_PASSWORD
+        value: ${DB_PASSWORD}
+      - key: RABBITMQ_HOST
+        value: ${RABBITMQ_HOST}
+      - key: RABBITMQ_USER
+        value: ${RABBITMQ_USER}
+      - key: RABBITMQ_PASS
+        value: ${RABBITMQ_PASS}
+      - key: STAGING_DIR
+        value: /mnt/media/staging_ingest
+      - key: SERVICE_NAME
+        value: stream-api
+      - key: SERVICE_VERSION
+        value: "1.0.0"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+      - key: ENVIRONMENT
+        value: production
+
+  - name: nginx
+    type: web
+    env: static
+    staticPublishPath: ./frontend
+    routes:
+      - path: /
+        rewrite: /index.html
+
+  # --- Background Workers ---
+  - name: media-manager
+    type: worker
+    env: python
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerBuildArgs:
+      SERVICE_DIR: media_manager
+      REQUIREMENTS_FILE: media_manager/requirements.txt
+    startCommand: python media_manager.py
+    envVars:
+      - key: DB_HOST
+        value: ${DB_HOST}
+      - key: DB_PORT
+        value: ${DB_PORT}
+      - key: DB_NAME
+        value: ${DB_NAME}
+      - key: DB_USER
+        value: ${DB_USER}
+      - key: DB_PASSWORD
+        value: ${DB_PASSWORD}
+      - key: RABBITMQ_HOST
+        value: ${RABBITMQ_HOST}
+      - key: RABBITMQ_USER
+        value: ${RABBITMQ_USER}
+      - key: RABBITMQ_PASS
+        value: ${RABBITMQ_PASS}
+      - key: STAGING_DIR
+        value: /mnt/media/staging_ingest
+      - key: SERVICE_NAME
+        value: media-manager
+      - key: SERVICE_VERSION
+        value: "1.0.0"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+      - key: ENVIRONMENT
+        value: production
+
+  - name: metadata-enricher
+    type: worker
+    env: python
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerBuildArgs:
+      SERVICE_DIR: metadata_enricher
+      REQUIREMENTS_FILE: metadata_enricher/requirements.txt
+    startCommand: python metadata_enricher.py
+    envVars:
+      - key: DB_HOST
+        value: ${DB_HOST}
+      - key: DB_PORT
+        value: ${DB_PORT}
+      - key: DB_NAME
+        value: ${DB_NAME}
+      - key: DB_USER
+        value: ${DB_USER}
+      - key: DB_PASSWORD
+        value: ${DB_PASSWORD}
+      - key: RABBITMQ_HOST
+        value: ${RABBITMQ_HOST}
+      - key: RABBITMQ_USER
+        value: ${RABBITMQ_USER}
+      - key: RABBITMQ_PASS
+        value: ${RABBITMQ_PASS}
+      - key: STAGING_DIR
+        value: /mnt/media/staging_ingest
+      - key: SERVICE_NAME
+        value: metadata-enricher
+      - key: SERVICE_VERSION
+        value: "1.0.0"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+      - key: ENVIRONMENT
+        value: production
+
+  - name: normalization-worker
+    type: worker
+    env: python
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerBuildArgs:
+      SERVICE_DIR: normalization_worker
+      REQUIREMENTS_FILE: normalization_worker/requirements.txt
+    startCommand: python normalization_worker.py
+    envVars:
+      - key: DB_HOST
+        value: ${DB_HOST}
+      - key: DB_PORT
+        value: ${DB_PORT}
+      - key: DB_NAME
+        value: ${DB_NAME}
+      - key: DB_USER
+        value: ${DB_USER}
+      - key: DB_PASSWORD
+        value: ${DB_PASSWORD}
+      - key: RABBITMQ_HOST
+        value: ${RABBITMQ_HOST}
+      - key: RABBITMQ_USER
+        value: ${RABBITMQ_USER}
+      - key: RABBITMQ_PASS
+        value: ${RABBITMQ_PASS}
+      - key: STAGING_DIR
+        value: /mnt/media/staging_ingest
+      - key: SERVICE_NAME
+        value: normalization-worker
+      - key: SERVICE_VERSION
+        value: "1.0.0"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+      - key: ENVIRONMENT
+        value: production
+
+  - name: scene-analyzer
+    type: worker
+    env: python
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerBuildArgs:
+      SERVICE_DIR: scene_analyzer
+      REQUIREMENTS_FILE: scene_analyzer/requirements.txt
+    startCommand: python scene_analyzer.py
+    envVars:
+      - key: DB_HOST
+        value: ${DB_HOST}
+      - key: DB_PORT
+        value: ${DB_PORT}
+      - key: DB_NAME
+        value: ${DB_NAME}
+      - key: DB_USER
+        value: ${DB_USER}
+      - key: DB_PASSWORD
+        value: ${DB_PASSWORD}
+      - key: RABBITMQ_HOST
+        value: ${RABBITMQ_HOST}
+      - key: RABBITMQ_USER
+        value: ${RABBITMQ_USER}
+      - key: RABBITMQ_PASS
+        value: ${RABBITMQ_PASS}
+      - key: STAGING_DIR
+        value: /mnt/media/staging_ingest
+      - key: SERVICE_NAME
+        value: scene-analyzer
+      - key: SERVICE_VERSION
+        value: "1.0.0"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+      - key: ENVIRONMENT
+        value: production
+
+  - name: scheduler-ai
+    type: worker
+    env: python
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerBuildArgs:
+      SERVICE_DIR: scheduler_ai
+      REQUIREMENTS_FILE: scheduler_ai/requirements.txt
+    startCommand: python scheduler.py
+    envVars:
+      - key: DB_HOST
+        value: ${DB_HOST}
+      - key: DB_PORT
+        value: ${DB_PORT}
+      - key: DB_NAME
+        value: ${DB_NAME}
+      - key: DB_USER
+        value: ${DB_USER}
+      - key: DB_PASSWORD
+        value: ${DB_PASSWORD}
+      - key: RABBITMQ_HOST
+        value: ${RABBITMQ_HOST}
+      - key: RABBITMQ_USER
+        value: ${RABBITMQ_USER}
+      - key: RABBITMQ_PASS
+        value: ${RABBITMQ_PASS}
+      - key: STAGING_DIR
+        value: /mnt/media/staging_ingest
+      - key: SERVICE_NAME
+        value: scheduler-ai
+      - key: SERVICE_VERSION
+        value: "1.0.0"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+      - key: ENVIRONMENT
+        value: production
