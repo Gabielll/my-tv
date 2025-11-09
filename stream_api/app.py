@@ -6,13 +6,13 @@ import time
 from datetime import datetime, timezone, timedelta
 from flask import Flask, jsonify, abort, request, g
 
-# Add the shared directory to the Python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'shared')))
-from db import get_db_connection
-from logging_config import configure_logging, get_logger, generate_correlation_id, CorrelationContext
-from health_check import create_standard_health_checker
-from config import Config
-from storage_manager import StorageManager
+# Add the project root to the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from shared.db import get_db_connection
+from shared.logging_config import configure_logging, get_logger, generate_correlation_id, CorrelationContext
+from shared.health_check import create_standard_health_checker
+from shared.config import Config
+from shared.storage_manager import StorageManager
 
 # --- Configuração ---
 service_config = Config.get_service_config()
