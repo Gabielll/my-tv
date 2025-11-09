@@ -12,6 +12,7 @@ from db import get_db_connection
 from logging_config import configure_logging, get_logger, generate_correlation_id, CorrelationContext
 from health_check import create_standard_health_checker
 from config import Config
+from storage_manager import StorageManager
 
 # --- Configuração ---
 service_config = Config.get_service_config()
@@ -25,6 +26,9 @@ app = Flask(__name__)
 # Create health checker
 health_checker = create_standard_health_checker(service_config['name'], include_rabbitmq=False)
 health_checker.create_flask_endpoint(app)
+
+# Initialize storage manager
+storage_manager = StorageManager()
 
 # --- Configuration ---
 HEARTBEAT_TIMEOUT_SECONDS = 90
@@ -168,14 +172,42 @@ def play_channel(channel_id):
         offset = (now_utc - start_time_utc).total_seconds()
         if offset < 0: offset = 0
 
-        media_file_path = f"/mnt/media/normalized/{program['media_item_id']}.mp4" # Assuming normalized files are mp4
+        # Use StorageManager to get the correct file path (R2 URL or local path)
+        relative_path = f"normalized/{program['media_item_id']}.mp4"
+        media_file_url = storage_manager.get_file_url(relative_path)
+        
+        # For streaming, we need a local file path. If file is in R2, we need to download it first
+        # or use the R2 URL directly if ffmpeg supports it
+        if media_file_url.startswith('http'):
+            # File is in R2, use URL directly (ffmpeg supports HTTP inputs)
+            media_input = media_file_url
+            logger.info(
+                "Using R2 URL for streaming",
+                context={
+                    'channel_id': channel_id,
+                    'media_item_id': program['media_item_id'],
+                    'r2_url': media_file_url
+                }
+            )
+        else:
+            # File is local, use local path
+            media_input = f"/mnt/media/normalized/{program['media_item_id']}.mp4"
+            logger.info(
+                "Using local file for streaming",
+                context={
+                    'channel_id': channel_id,
+                    'media_item_id': program['media_item_id'],
+                    'local_path': media_input
+                }
+            )
+        
         hls_output_dir = f"/mnt/media/streams/hls/{channel_id}"
         os.makedirs(hls_output_dir, exist_ok=True)
 
         ffmpeg_cmd = [
             'ffmpeg', '-re',
             '-ss', str(offset),
-            '-i', media_file_path,
+            '-i', media_input,
             '-c:v', 'copy',
             '-c:a', 'copy',
             '-hls_time', '10',
@@ -199,7 +231,7 @@ def play_channel(channel_id):
             context={
                 'channel_id': channel_id,
                 'process_pid': process.pid,
-                'media_file_path': media_file_path,
+                'media_input': media_input,
                 'offset_seconds': offset,
                 'hls_output_dir': hls_output_dir
             }

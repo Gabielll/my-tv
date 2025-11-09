@@ -1,56 +1,10 @@
 version: '3.8'
 
 services:
-  # --- Infrastructure Services ---
-  rabbitmq:
-    image: rabbitmq:3.11-management
-    hostname: rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq/
-    environment:
-      - RABBITMQ_DEFAULT_USER=user
-      - RABBITMQ_DEFAULT_PASS=password
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # --- Infrastructure Services (Removed - Using External Services) ---
+  # Local CockroachDB and RabbitMQ removed - using CockroachDB Cloud and CloudAMQP
 
-  db:
-    image: cockroachdb/cockroach:latest
-    command: start-single-node --insecure
-    hostname: db
-    ports:
-      - "26257:26257"
-      - "8081:8080"
-    volumes:
-      - db_data:/cockroach/cockroach-data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # --- Database Initializer ---
-  db-init:
-    image: cockroachdb/cockroach:latest
-    depends_on:
-      db:
-        condition: service_healthy
-    volumes:
-      - ./database_schema_cockroach.sql:/schema.sql
-    entrypoint: ["/bin/bash", "-c"]
-    command: >
-      "echo 'Waiting for DB to be ready...' &&
-       sleep 5 &&
-       /cockroach/cockroach sql --insecure --host=db -e 'CREATE DATABASE IF NOT EXISTS media_server;' &&
-       /cockroach/cockroach sql --insecure --host=db --database=media_server -f /schema.sql &&
-       echo 'Database initialized.'"
-
-  # --- Application Services ---
+  # --- Application Services (Converted to Web Services) ---
   media_manager:
     build:
       context: .
@@ -58,35 +12,44 @@ services:
       args:
         SERVICE_DIR: media_manager
         REQUIREMENTS_FILE: media_manager/requirements.txt
-    command: python media_manager.py
+    command: python media_manager/app.py
+    ports:
+      - "8002:5000"
     environment: &app-env
-      DB_HOST: db
-      DB_PORT: '26257'
-      DB_NAME: media_server
-      DB_USER: root
-      DB_PASSWORD: ''
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USER: user
-      RABBITMQ_PASS: password
+      # External Database (CockroachDB Cloud)
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-26257}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      # External Message Queue (CloudAMQP)
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASS: ${RABBITMQ_PASS}
+      # External Storage (Cloudflare R2)
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME}
+      R2_ENDPOINT: ${R2_ENDPOINT}
+      STORAGE_MODE: ${STORAGE_MODE:-hybrid}
+      # External APIs
+      TMDB_API_KEY: ${TMDB_API_KEY}
+      # Service Configuration
       STAGING_DIR: /mnt/media/staging_ingest
       SERVICE_NAME: media_manager
       SERVICE_VERSION: "1.0.0"
       LOG_LEVEL: INFO
       LOG_FORMAT: json
-      ENVIRONMENT: production
+      ENVIRONMENT: development
     volumes:
       - media_volume:/mnt/media
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.path.append('/app'); from shared.health_check import check_database_connection, check_rabbitmq_connection; exit(0 if check_database_connection() and check_rabbitmq_connection() else 1)"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
       timeout: 10s
       start_period: 60s
       retries: 3
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
-      rabbitmq:
-        condition: service_healthy
 
   metadata_enricher:
     build:
@@ -95,21 +58,18 @@ services:
       args:
         SERVICE_DIR: metadata_enricher
         REQUIREMENTS_FILE: metadata_enricher/requirements.txt
-    command: python metadata_enricher.py
+    command: python metadata_enricher/app.py
+    ports:
+      - "8003:5000"
     environment:
       <<: *app-env
       SERVICE_NAME: metadata_enricher
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.path.append('/app'); from shared.health_check import check_database_connection, check_rabbitmq_connection; exit(0 if check_database_connection() and check_rabbitmq_connection() else 1)"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
       timeout: 10s
       start_period: 60s
       retries: 3
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
-      rabbitmq:
-        condition: service_healthy
 
   normalization_worker:
     build:
@@ -118,15 +78,20 @@ services:
       args:
         SERVICE_DIR: normalization_worker
         REQUIREMENTS_FILE: normalization_worker/requirements.txt
-    command: python normalization_worker.py
-    environment: *app-env
+    command: python normalization_worker/app.py
+    ports:
+      - "8004:5000"
+    environment:
+      <<: *app-env
+      SERVICE_NAME: normalization_worker
     volumes:
       - media_volume:/mnt/media
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
-      rabbitmq:
-        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
 
   scene_analyzer:
     build:
@@ -135,15 +100,20 @@ services:
       args:
         SERVICE_DIR: scene_analyzer
         REQUIREMENTS_FILE: scene_analyzer/requirements.txt
-    command: python scene_analyzer.py
-    environment: *app-env
+    command: python scene_analyzer/app.py
+    ports:
+      - "8005:5000"
+    environment:
+      <<: *app-env
+      SERVICE_NAME: scene_analyzer
     volumes:
       - media_volume:/mnt/media
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
-      rabbitmq:
-        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
 
   admin_ui:
     build:
@@ -160,18 +130,13 @@ services:
       STAGING_DIR: /mnt/media/staging_ingest
       LOG_LEVEL: INFO
       LOG_FORMAT: json
-      ENVIRONMENT: production
+      ENVIRONMENT: development
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       start_period: 60s
       retries: 3
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
-      rabbitmq:
-        condition: service_healthy
 
   scheduler_ai:
     build:
@@ -180,13 +145,18 @@ services:
       args:
         SERVICE_DIR: scheduler_ai
         REQUIREMENTS_FILE: scheduler_ai/requirements.txt
-    command: python scheduler.py
-    environment: *app-env
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
-      rabbitmq:
-        condition: service_healthy
+    command: python scheduler_ai/app.py
+    ports:
+      - "8006:5000"
+    environment:
+      <<: *app-env
+      SERVICE_NAME: scheduler_ai
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
 
   stream-api:
     build:
@@ -196,10 +166,15 @@ services:
       - "8001:8001"
     volumes:
       - media_volume:/mnt/media
-    environment: *app-env
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
+    environment:
+      <<: *app-env
+      SERVICE_NAME: stream-api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
 
   nginx:
     image: nginx:1.21
@@ -214,6 +189,4 @@ services:
       - admin_ui
 
 volumes:
-  rabbitmq_data:
-  db_data:
   media_volume:

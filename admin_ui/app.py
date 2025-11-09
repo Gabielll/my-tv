@@ -11,6 +11,7 @@ from shared.db import get_db_connection
 from shared.logging_config import configure_logging, get_logger, generate_correlation_id, CorrelationContext
 from shared.health_check import create_standard_health_checker
 from shared.config import Config
+from shared.storage_manager import StorageManager
 
 # --- Configuração ---
 service_config = Config.get_service_config()
@@ -27,6 +28,9 @@ app.config['MAX_CONTENT_LENGTH'] = media_config['max_file_size']
 # Create health checker
 health_checker = create_standard_health_checker(service_config['name'])
 health_checker.create_flask_endpoint(app)
+
+# Initialize storage manager
+storage_manager = StorageManager()
 
 # --- Middleware para Correlation ID ---
 @app.before_request
@@ -105,39 +109,48 @@ def upload_file():
     for file in files:
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
-            destination = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file_size = 0
-
-            # Garante que o diretório de destino exista
-            os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+            relative_path = f"staging/{filename}"
+            
+            # Get file size before saving
+            file.seek(0, 2)  # Seek to end
+            file_size = file.tell()
+            file.seek(0)  # Reset to beginning
+            total_size += file_size
 
             try:
-                file.save(destination)
-                file_size = os.path.getsize(destination)
-                total_size += file_size
+                # Use StorageManager to save file (supports R2 + local fallback)
+                file_url = storage_manager.save_file(
+                    relative_path, 
+                    file, 
+                    content_type=file.content_type
+                )
                 
                 logger.info(
-                    "File uploaded successfully",
+                    "File uploaded successfully via StorageManager",
                     context={
                         'filename': filename,
-                        'destination': destination,
+                        'relative_path': relative_path,
+                        'file_url': file_url,
                         'file_size_bytes': file_size,
+                        'storage_mode': storage_manager.storage_mode,
                         'remote_addr': request.remote_addr
                     }
                 )
                 logger.audit("file_uploaded", filename, context={
                     'file_size_bytes': file_size,
-                    'destination': destination
+                    'storage_url': file_url,
+                    'storage_mode': storage_manager.storage_mode
                 })
                 success_count += 1
                 
             except Exception as e:
                 logger.error(
-                    "Failed to save uploaded file",
+                    "Failed to save uploaded file via StorageManager",
                     error=e,
                     context={
                         'filename': filename,
-                        'destination': destination,
+                        'relative_path': relative_path,
+                        'storage_mode': storage_manager.storage_mode,
                         'remote_addr': request.remote_addr
                     },
                     severity="operational"

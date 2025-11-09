@@ -1,28 +1,37 @@
-# Guia de Implantação no Render
+# 🚀 Guia de Deploy no Render - Arquitetura Convertida
 
-Este guia detalha o processo de implantação do projeto de servidor de mídia na plataforma Render, utilizando o plano gratuito. A implantação será feita usando Docker, com os serviços configurados para comunicação interna e conexão a um banco de dados CockroachDB externo.
+**⚠️ NOTA:** Este guia está obsoleto. Para deployment atual, use:
+- **[README_RENDER_DEPLOYMENT.md](README_RENDER_DEPLOYMENT.md)** - Guia rápido de 5 minutos
+- **[RENDER_DEPLOYMENT_INSTRUCTIONS.md](RENDER_DEPLOYMENT_INSTRUCTIONS.md)** - Instruções detalhadas
+- **[docs/RENDER_DEPLOYMENT_GUIDE.md](docs/RENDER_DEPLOYMENT_GUIDE.md)** - Guia completo
 
-## 1. Visão Geral da Implantação no Render
+---
 
-O Render oferece um plano gratuito que permite a criação de "Web Services" e "Static Sites". Como nosso projeto é baseado em microsserviços, vamos precisar criar vários serviços no Render. A comunicação entre eles será feita através da rede interna do Render.
+## 📋 Nova Arquitetura (Todos Web Services)
 
-**Serviços a serem criados:**
+O projeto foi convertido para usar **apenas Web Services** no Render, eliminando a necessidade de workers em background. Todos os serviços agora têm endpoints HTTP e health checks.
 
-- **Web Services:**
-    - `admin-ui`: A interface de administração para upload de mídia.
-    - `stream-api`: O serviço que gerencia os streams de vídeo on-demand.
-    - `nginx`: O servidor web que atua como proxy reverso e serve o frontend estático.
-- **Background Workers (Trabalhadores em Segundo Plano):**
-    - `media-manager`: Orquestra o pipeline de ingestão de mídia.
-    - `metadata-enricher`: Busca metadados para a mídia.
-    - `normalization-worker`: Padroniza os arquivos de vídeo.
-    - `scene-analyzer`: Analisa os vídeos em busca de intervalos.
-    - `scheduler-ai`: Cria a programação dos canais.
+**Serviços Deployados (8 Web Services):**
 
-**Banco de Dados e Fila de Mensagens:**
+- **Frontend Services:**
+    - `frontend`: Site estático com player web
+    - `admin-ui`: Interface de administração para upload de mídia
+    - `stream-api`: Serviço que gerencia streams de vídeo on-demand
 
-- **Banco de Dados:** Utilizaremos um banco de dados CockroachDB externo. Você pode criar uma conta gratuita no [CockroachDB Cloud](https://www.cockroachlabs.com/cloud/).
-- **Fila de Mensagens:** Utilizaremos o CloudAMQP para o RabbitMQ. Você pode criar uma conta gratuita no [CloudAMQP](https://www.cloudamqp.com/).
+- **Processing Services (Convertidos de Workers):**
+    - `media-manager`: Orquestra pipeline de ingestão (agora web service)
+    - `metadata-enricher`: Busca metadados TMDB + Gemini AI (agora web service)
+    - `normalization-worker`: Padroniza arquivos de vídeo (agora web service)
+    - `scene-analyzer`: Analisa vídeos para intervalos (agora web service)
+    - `scheduler-ai`: Cria programação com IA (agora web service)
+
+**Serviços Externos (100% Gratuitos):**
+
+- **Banco de Dados:** CockroachDB Cloud (5GB gratuitos)
+- **Fila de Mensagens:** CloudAMQP (1M mensagens/mês gratuitas)
+- **Storage:** Cloudflare R2 (10GB gratuitos)
+- **APIs:** TMDB (1000 req/dia) + Google Gemini (60 req/min)
+- **Monitoramento:** UptimeRobot (50 monitors gratuitos)
 
 ## 2. Passos para a Implantação
 

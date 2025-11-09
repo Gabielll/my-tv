@@ -1,30 +1,27 @@
 services:
-  # --- Web Services ---
-  - name: admin-ui
-    type: web
+  # Frontend - Static Site
+  - type: web
+    name: frontend
+    env: static
+    buildCommand: ""
+    staticPublishPath: ./frontend
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  # Admin UI - Web Service
+  - type: web
+    name: admin-ui
     env: python
-    dockerfilePath: ./admin_ui/Dockerfile
+    region: oregon
+    plan: free
+    buildCommand: pip install -r admin_ui/requirements.txt
+    startCommand: python admin_ui/app.py
+    healthCheckPath: /health
     envVars:
-      - key: DB_HOST
-        value: ${DB_HOST}
-      - key: DB_PORT
-        value: ${DB_PORT}
-      - key: DB_NAME
-        value: ${DB_NAME}
-      - key: DB_USER
-        value: ${DB_USER}
-      - key: DB_PASSWORD
-        value: ${DB_PASSWORD}
-      - key: RABBITMQ_HOST
-        value: ${RABBITMQ_HOST}
-      - key: RABBITMQ_USER
-        value: ${RABBITMQ_USER}
-      - key: RABBITMQ_PASS
-        value: ${RABBITMQ_PASS}
-      - key: STAGING_DIR
-        value: /mnt/media/staging_ingest
       - key: SERVICE_NAME
-        value: admin_ui
+        value: admin-ui
       - key: SERVICE_VERSION
         value: "1.0.0"
       - key: LOG_LEVEL
@@ -33,31 +30,50 @@ services:
         value: json
       - key: ENVIRONMENT
         value: production
-    healthCheckPath: /health
-
-  - name: stream-api
-    type: web
-    env: python
-    dockerfilePath: ./stream_api/Dockerfile
-    envVars:
-      - key: DB_HOST
-        value: ${DB_HOST}
-      - key: DB_PORT
-        value: ${DB_PORT}
-      - key: DB_NAME
-        value: ${DB_NAME}
-      - key: DB_USER
-        value: ${DB_USER}
-      - key: DB_PASSWORD
-        value: ${DB_PASSWORD}
-      - key: RABBITMQ_HOST
-        value: ${RABBITMQ_HOST}
-      - key: RABBITMQ_USER
-        value: ${RABBITMQ_USER}
-      - key: RABBITMQ_PASS
-        value: ${RABBITMQ_PASS}
+      - key: STORAGE_MODE
+        value: hybrid
       - key: STAGING_DIR
-        value: /mnt/media/staging_ingest
+        value: /tmp/staging
+      - key: NORMALIZED_DIR
+        value: /tmp/normalized
+      - key: STREAMS_DIR
+        value: /tmp/streams
+      # Database (CockroachDB Cloud) - Configure in Render Dashboard
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "26257"
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      # Storage (Cloudflare R2) - Configure in Render Dashboard
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_ENDPOINT
+        sync: false
+      # APIs - Configure in Render Dashboard
+      - key: TMDB_API_KEY
+        sync: false
+
+  # Stream API - Web Service
+  - type: web
+    name: stream-api
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r stream_api/requirements.txt
+    startCommand: python stream_api/app.py
+    healthCheckPath: /health
+    envVars:
       - key: SERVICE_NAME
         value: stream-api
       - key: SERVICE_VERSION
@@ -68,44 +84,47 @@ services:
         value: json
       - key: ENVIRONMENT
         value: production
-
-  - name: nginx
-    type: web
-    env: static
-    staticPublishPath: ./frontend
-    routes:
-      - path: /
-        rewrite: /index.html
-
-  # --- Background Workers ---
-  - name: media-manager
-    type: worker
-    env: python
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    dockerBuildArgs:
-      SERVICE_DIR: media_manager
-      REQUIREMENTS_FILE: media_manager/requirements.txt
-    startCommand: python media_manager.py
-    envVars:
-      - key: DB_HOST
-        value: ${DB_HOST}
-      - key: DB_PORT
-        value: ${DB_PORT}
-      - key: DB_NAME
-        value: ${DB_NAME}
-      - key: DB_USER
-        value: ${DB_USER}
-      - key: DB_PASSWORD
-        value: ${DB_PASSWORD}
-      - key: RABBITMQ_HOST
-        value: ${RABBITMQ_HOST}
-      - key: RABBITMQ_USER
-        value: ${RABBITMQ_USER}
-      - key: RABBITMQ_PASS
-        value: ${RABBITMQ_PASS}
+      - key: STORAGE_MODE
+        value: hybrid
       - key: STAGING_DIR
-        value: /mnt/media/staging_ingest
+        value: /tmp/staging
+      - key: NORMALIZED_DIR
+        value: /tmp/normalized
+      - key: STREAMS_DIR
+        value: /tmp/streams
+      # Database (CockroachDB Cloud) - Configure in Render Dashboard
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "26257"
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      # Storage (Cloudflare R2) - Configure in Render Dashboard
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_ENDPOINT
+        sync: false
+
+  # Media Manager - Converted Worker to Web Service
+  - type: web
+    name: media-manager
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r media_manager/requirements.txt
+    startCommand: python media_manager/app.py
+    healthCheckPath: /health
+    envVars:
       - key: SERVICE_NAME
         value: media-manager
       - key: SERVICE_VERSION
@@ -116,35 +135,41 @@ services:
         value: json
       - key: ENVIRONMENT
         value: production
-
-  - name: metadata-enricher
-    type: worker
-    env: python
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    dockerBuildArgs:
-      SERVICE_DIR: metadata_enricher
-      REQUIREMENTS_FILE: metadata_enricher/requirements.txt
-    startCommand: python metadata_enricher.py
-    envVars:
-      - key: DB_HOST
-        value: ${DB_HOST}
-      - key: DB_PORT
-        value: ${DB_PORT}
-      - key: DB_NAME
-        value: ${DB_NAME}
-      - key: DB_USER
-        value: ${DB_USER}
-      - key: DB_PASSWORD
-        value: ${DB_PASSWORD}
-      - key: RABBITMQ_HOST
-        value: ${RABBITMQ_HOST}
-      - key: RABBITMQ_USER
-        value: ${RABBITMQ_USER}
-      - key: RABBITMQ_PASS
-        value: ${RABBITMQ_PASS}
       - key: STAGING_DIR
-        value: /mnt/media/staging_ingest
+        value: /tmp/staging
+      - key: NORMALIZED_DIR
+        value: /tmp/normalized
+      - key: STREAMS_DIR
+        value: /tmp/streams
+      # Database (CockroachDB Cloud) - Configure in Render Dashboard
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "26257"
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      # Message Queue (CloudAMQP) - Configure in Render Dashboard
+      - key: RABBITMQ_HOST
+        sync: false
+      - key: RABBITMQ_USER
+        sync: false
+      - key: RABBITMQ_PASS
+        sync: false
+
+  # Metadata Enricher - Converted Worker to Web Service
+  - type: web
+    name: metadata-enricher
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r metadata_enricher/requirements.txt
+    startCommand: python metadata_enricher/app.py
+    healthCheckPath: /health
+    envVars:
       - key: SERVICE_NAME
         value: metadata-enricher
       - key: SERVICE_VERSION
@@ -155,35 +180,46 @@ services:
         value: json
       - key: ENVIRONMENT
         value: production
-
-  - name: normalization-worker
-    type: worker
-    env: python
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    dockerBuildArgs:
-      SERVICE_DIR: normalization_worker
-      REQUIREMENTS_FILE: normalization_worker/requirements.txt
-    startCommand: python normalization_worker.py
-    envVars:
-      - key: DB_HOST
-        value: ${DB_HOST}
-      - key: DB_PORT
-        value: ${DB_PORT}
-      - key: DB_NAME
-        value: ${DB_NAME}
-      - key: DB_USER
-        value: ${DB_USER}
-      - key: DB_PASSWORD
-        value: ${DB_PASSWORD}
-      - key: RABBITMQ_HOST
-        value: ${RABBITMQ_HOST}
-      - key: RABBITMQ_USER
-        value: ${RABBITMQ_USER}
-      - key: RABBITMQ_PASS
-        value: ${RABBITMQ_PASS}
       - key: STAGING_DIR
-        value: /mnt/media/staging_ingest
+        value: /tmp/staging
+      - key: NORMALIZED_DIR
+        value: /tmp/normalized
+      - key: STREAMS_DIR
+        value: /tmp/streams
+      # Database (CockroachDB Cloud) - Configure in Render Dashboard
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "26257"
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      # Message Queue (CloudAMQP) - Configure in Render Dashboard
+      - key: RABBITMQ_HOST
+        sync: false
+      - key: RABBITMQ_USER
+        sync: false
+      - key: RABBITMQ_PASS
+        sync: false
+      # APIs - Configure in Render Dashboard
+      - key: TMDB_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+
+  # Normalization Worker - Converted Worker to Web Service
+  - type: web
+    name: normalization-worker
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r normalization_worker/requirements.txt
+    startCommand: python normalization_worker/app.py
+    healthCheckPath: /health
+    envVars:
       - key: SERVICE_NAME
         value: normalization-worker
       - key: SERVICE_VERSION
@@ -194,35 +230,41 @@ services:
         value: json
       - key: ENVIRONMENT
         value: production
-
-  - name: scene-analyzer
-    type: worker
-    env: python
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    dockerBuildArgs:
-      SERVICE_DIR: scene_analyzer
-      REQUIREMENTS_FILE: scene_analyzer/requirements.txt
-    startCommand: python scene_analyzer.py
-    envVars:
-      - key: DB_HOST
-        value: ${DB_HOST}
-      - key: DB_PORT
-        value: ${DB_PORT}
-      - key: DB_NAME
-        value: ${DB_NAME}
-      - key: DB_USER
-        value: ${DB_USER}
-      - key: DB_PASSWORD
-        value: ${DB_PASSWORD}
-      - key: RABBITMQ_HOST
-        value: ${RABBITMQ_HOST}
-      - key: RABBITMQ_USER
-        value: ${RABBITMQ_USER}
-      - key: RABBITMQ_PASS
-        value: ${RABBITMQ_PASS}
       - key: STAGING_DIR
-        value: /mnt/media/staging_ingest
+        value: /tmp/staging
+      - key: NORMALIZED_DIR
+        value: /tmp/normalized
+      - key: STREAMS_DIR
+        value: /tmp/streams
+      # Database (CockroachDB Cloud) - Configure in Render Dashboard
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "26257"
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      # Message Queue (CloudAMQP) - Configure in Render Dashboard
+      - key: RABBITMQ_HOST
+        sync: false
+      - key: RABBITMQ_USER
+        sync: false
+      - key: RABBITMQ_PASS
+        sync: false
+
+  # Scene Analyzer - Converted Worker to Web Service
+  - type: web
+    name: scene-analyzer
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r scene_analyzer/requirements.txt
+    startCommand: python scene_analyzer/app.py
+    healthCheckPath: /health
+    envVars:
       - key: SERVICE_NAME
         value: scene-analyzer
       - key: SERVICE_VERSION
@@ -233,35 +275,41 @@ services:
         value: json
       - key: ENVIRONMENT
         value: production
-
-  - name: scheduler-ai
-    type: worker
-    env: python
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    dockerBuildArgs:
-      SERVICE_DIR: scheduler_ai
-      REQUIREMENTS_FILE: scheduler_ai/requirements.txt
-    startCommand: python scheduler.py
-    envVars:
-      - key: DB_HOST
-        value: ${DB_HOST}
-      - key: DB_PORT
-        value: ${DB_PORT}
-      - key: DB_NAME
-        value: ${DB_NAME}
-      - key: DB_USER
-        value: ${DB_USER}
-      - key: DB_PASSWORD
-        value: ${DB_PASSWORD}
-      - key: RABBITMQ_HOST
-        value: ${RABBITMQ_HOST}
-      - key: RABBITMQ_USER
-        value: ${RABBITMQ_USER}
-      - key: RABBITMQ_PASS
-        value: ${RABBITMQ_PASS}
       - key: STAGING_DIR
-        value: /mnt/media/staging_ingest
+        value: /tmp/staging
+      - key: NORMALIZED_DIR
+        value: /tmp/normalized
+      - key: STREAMS_DIR
+        value: /tmp/streams
+      # Database (CockroachDB Cloud) - Configure in Render Dashboard
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "26257"
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      # Message Queue (CloudAMQP) - Configure in Render Dashboard
+      - key: RABBITMQ_HOST
+        sync: false
+      - key: RABBITMQ_USER
+        sync: false
+      - key: RABBITMQ_PASS
+        sync: false
+
+  # Scheduler AI - Converted Worker to Web Service
+  - type: web
+    name: scheduler-ai
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r scheduler_ai/requirements.txt
+    startCommand: python scheduler_ai/app.py
+    healthCheckPath: /health
+    envVars:
       - key: SERVICE_NAME
         value: scheduler-ai
       - key: SERVICE_VERSION
@@ -272,3 +320,30 @@ services:
         value: json
       - key: ENVIRONMENT
         value: production
+      - key: STAGING_DIR
+        value: /tmp/staging
+      - key: NORMALIZED_DIR
+        value: /tmp/normalized
+      - key: STREAMS_DIR
+        value: /tmp/streams
+      # Database (CockroachDB Cloud) - Configure in Render Dashboard
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "26257"
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      # Message Queue (CloudAMQP) - Configure in Render Dashboard
+      - key: RABBITMQ_HOST
+        sync: false
+      - key: RABBITMQ_USER
+        sync: false
+      - key: RABBITMQ_PASS
+        sync: false
+      # APIs - Configure in Render Dashboard
+      - key: GEMINI_API_KEY
+        sync: false

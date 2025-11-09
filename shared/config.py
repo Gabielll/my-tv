@@ -74,6 +74,28 @@ class Config:
         }
     
     @classmethod
+    def get_storage_config(cls) -> Dict[str, Any]:
+        """Get storage configuration for Cloudflare R2"""
+        return {
+            'mode': os.getenv('STORAGE_MODE', 'local'),  # 'local', 'r2', 'hybrid'
+            'r2_account_id': os.getenv('R2_ACCOUNT_ID'),
+            'r2_access_key_id': os.getenv('R2_ACCESS_KEY_ID'),
+            'r2_secret_access_key': os.getenv('R2_SECRET_ACCESS_KEY'),
+            'r2_bucket_name': os.getenv('R2_BUCKET_NAME'),
+            'r2_endpoint': os.getenv('R2_ENDPOINT')
+        }
+    
+    @classmethod
+    def is_render_mode(cls) -> bool:
+        """Check if running in Render mode (external services)"""
+        return os.getenv('DEPLOYMENT_MODE', 'local').lower() == 'render'
+    
+    @classmethod
+    def is_local_mode(cls) -> bool:
+        """Check if running in local mode (Docker services)"""
+        return os.getenv('DEPLOYMENT_MODE', 'local').lower() == 'local'
+    
+    @classmethod
     def is_production(cls) -> bool:
         """Check if running in production environment"""
         return os.getenv('ENVIRONMENT', 'development').lower() == 'production'
