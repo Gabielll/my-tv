@@ -200,7 +200,8 @@ def create_standard_health_checker(service_name: str, include_db: bool = True,
     if include_rabbitmq:
         health_checker.add_dependency('rabbitmq', check_rabbitmq_connection)
     
-    # Always check disk space for media services
-    health_checker.add_dependency('disk_space', lambda: check_disk_space('/mnt/media', 1))
+    # *** LINHA CORRIGIDA ABAIXO ***
+    # Verifica /tmp (que existe no Render) em vez de /mnt/media
+    health_checker.add_dependency('disk_space', lambda: check_disk_space('/tmp', 0))
     
     return health_checker
