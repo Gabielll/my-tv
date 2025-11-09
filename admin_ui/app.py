@@ -26,7 +26,9 @@ app.config['UPLOAD_FOLDER'] = media_config['staging_dir']
 app.config['MAX_CONTENT_LENGTH'] = media_config['max_file_size']
 
 # Create health checker
-health_checker = create_standard_health_checker(service_config['name'])
+# MODIFICAÇÃO: Adicionado include_rabbitmq=False
+# O admin-ui não se conecta ao RabbitMQ, então não deve verificar seu status.
+health_checker = create_standard_health_checker(service_config['name'], include_rabbitmq=False)
 health_checker.create_flask_endpoint(app)
 
 # Initialize storage manager
