@@ -353,9 +353,9 @@ def metadata_enricher_worker():
     
     try:
         # Start consuming messages
-        rabbitmq_client.consume_messages(
+        rabbitmq_client.start_consumer(
             queue_name='enrichment_jobs',
-            callback=process_enrichment_job
+            callback_function=process_enrichment_job
         )
     except Exception as e:
         logger.error("Metadata Enricher worker error", error=e)

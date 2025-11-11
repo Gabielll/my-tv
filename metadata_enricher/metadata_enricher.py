@@ -333,9 +333,9 @@ def main():
     
     try:
         # Start consuming messages
-        rabbitmq_client.consume_messages(
+        rabbitmq_client.start_consumer(
             queue_name='enrichment_jobs',
-            callback=process_enrichment_job
+            callback_function=process_enrichment_job
         )
     except KeyboardInterrupt:
         logger.info("Metadata Enricher worker stopped by user")

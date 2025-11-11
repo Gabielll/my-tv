@@ -86,7 +86,7 @@ class TestExternalServiceConnectivity(unittest.TestCase):
             
             # Test client functions exist
             self.assertIsNotNone(rabbitmq_client.publish_message)
-            self.assertIsNotNone(rabbitmq_client.consume_messages)
+            self.assertIsNotNone(rabbitmq_client.start_consumer)
             
             print("✓ RabbitMQ configuration working")
             return True

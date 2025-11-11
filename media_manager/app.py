@@ -154,7 +154,38 @@ def media_manager_worker():
     # Ensure staging directory exists
     if not os.path.exists(STAGING_DIR):
         logger.info(f"Staging directory '{STAGING_DIR}' does not exist. Creating...")
-        os.makedirs(STAGING_DIR)
+        try:
+            os.makedirs(STAGING_DIR, exist_ok=True)
+            logger.info(f"Successfully created staging directory: {STAGING_DIR}")
+        except PermissionError as e:
+            logger.error(
+                f"Permission denied creating staging directory: {STAGING_DIR}",
+                error=e,
+                severity="critical"
+            )
+            # Try to use a fallback directory in /tmp
+            fallback_dir = "/tmp/media_staging"
+            logger.info(f"Attempting to use fallback directory: {fallback_dir}")
+            try:
+                os.makedirs(fallback_dir, exist_ok=True)
+                # Update the global STAGING_DIR
+                global STAGING_DIR
+                STAGING_DIR = fallback_dir
+                logger.info(f"Successfully created fallback staging directory: {STAGING_DIR}")
+            except Exception as fallback_error:
+                logger.error(
+                    "Failed to create fallback staging directory",
+                    error=fallback_error,
+                    severity="critical"
+                )
+                raise
+        except Exception as e:
+            logger.error(
+                f"Unexpected error creating staging directory: {STAGING_DIR}",
+                error=e,
+                severity="critical"
+            )
+            raise
 
     logger.info(f"Monitoring directory: {STAGING_DIR}")
 

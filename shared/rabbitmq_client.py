@@ -2,25 +2,49 @@ import os
 import pika
 import logging
 import time
-
-# --- Configuração ---
-RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
+from .config import Config
 
 def get_rabbitmq_connection():
     """
     Cria e retorna uma conexão com o RabbitMQ.
     Inclui retentativas para dar tempo ao serviço de iniciar.
     """
+    config = Config.get_rabbitmq_config()
+    
+    # Check if RabbitMQ is properly configured
+    if not config['host'] or config['host'] == 'localhost':
+        logging.warning("RabbitMQ host not configured or using localhost. Skipping connection.")
+        return None
+    
     max_retries = 10
     retry_delay = 5
+    
     for attempt in range(max_retries):
         try:
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
+            # Create connection parameters with credentials
+            credentials = pika.PlainCredentials(config['username'], config['password'])
+            parameters = pika.ConnectionParameters(
+                host=config['host'],
+                port=config['port'],
+                virtual_host=config['virtual_host'],
+                credentials=credentials,
+                connection_attempts=3,
+                retry_delay=2,
+                heartbeat=config['heartbeat']
+            )
+            
+            connection = pika.BlockingConnection(parameters)
             logging.info("Conexão com RabbitMQ estabelecida com sucesso.")
             return connection
-        except pika.exceptions.AMQPConnectionError as e:
+        except (pika.exceptions.AMQPConnectionError, pika.exceptions.ProbableAuthenticationError) as e:
             logging.warning(f"Não foi possível conectar ao RabbitMQ (tentativa {attempt + 1}/{max_retries}): {e}")
+            if attempt == max_retries - 1:
+                logging.error("Falha de autenticação no RabbitMQ. Verifique as credenciais nas variáveis de ambiente.")
             time.sleep(retry_delay)
+        except Exception as e:
+            logging.error(f"Erro inesperado ao conectar ao RabbitMQ (tentativa {attempt + 1}/{max_retries}): {e}")
+            time.sleep(retry_delay)
+    
     logging.error("Falha ao conectar ao RabbitMQ após múltiplas tentativas.")
     return None
 
@@ -31,7 +55,8 @@ def publish_message(queue_name, message):
     """
     connection = get_rabbitmq_connection()
     if not connection:
-        return
+        logging.warning(f"RabbitMQ não disponível. Mensagem '{message}' para fila '{queue_name}' não foi publicada.")
+        return False
 
     try:
         channel = connection.channel()
@@ -46,8 +71,10 @@ def publish_message(queue_name, message):
                 delivery_mode=2,  # Torna a mensagem persistente
             ))
         logging.info(f"Mensagem '{message}' publicada na fila '{queue_name}'")
+        return True
     except Exception as e:
         logging.error(f"Erro ao publicar mensagem no RabbitMQ: {e}")
+        return False
     finally:
         if connection and connection.is_open:
             connection.close()
@@ -59,8 +86,8 @@ def start_consumer(queue_name, callback_function):
     """
     connection = get_rabbitmq_connection()
     if not connection:
-        logging.error("Não é possível iniciar o consumidor sem uma conexão com o RabbitMQ.")
-        return
+        logging.warning(f"RabbitMQ não disponível. Consumidor para fila '{queue_name}' não foi iniciado.")
+        return False
 
     try:
         channel = connection.channel()
@@ -86,8 +113,10 @@ def start_consumer(queue_name, callback_function):
 
         logging.info(f"Consumidor iniciado para a fila '{queue_name}'. Aguardando mensagens...")
         channel.start_consuming()
+        return True
     except Exception as e:
         logging.error(f"Erro crítico no consumidor RabbitMQ: {e}")
+        return False
     finally:
         if connection and connection.is_open:
             connection.close()
