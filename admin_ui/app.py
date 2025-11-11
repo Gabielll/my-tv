@@ -12,6 +12,7 @@ from shared.logging_config import configure_logging, get_logger, generate_correl
 from shared.health_check import create_standard_health_checker
 from shared.config import Config
 from shared.storage_manager import StorageManager
+from shared import rabbitmq_client
 
 # --- Configuração ---
 service_config = Config.get_service_config()
@@ -127,6 +128,69 @@ def upload_file():
                     content_type=file.content_type
                 )
                 
+                # Add file to database immediately since directory monitoring may not work on Render
+                conn = get_db_connection()
+                if conn:
+                    try:
+                        with conn.cursor() as cur:
+                            # Check if file already exists to avoid duplicates
+                            cur.execute("SELECT id FROM media_items WHERE original_file_path = %s;", (file_url,))
+                            if not cur.fetchone():
+                                # Insert new media item
+                                title = os.path.splitext(filename)[0]
+                                
+                                cur.execute(
+                                    """
+                                    INSERT INTO media_items (title, original_file_path, file_path, status)
+                                    VALUES (%s, %s, %s, %s)
+                                    RETURNING id;
+                                    """,
+                                    (title, file_url, file_url, 'pending_enrichment')
+                                )
+                                media_item_id = cur.fetchone()[0]
+                                conn.commit()
+                                
+                                logger.info(
+                                    "Media item inserted into database",
+                                    context={
+                                        'filename': filename,
+                                        'media_item_id': media_item_id,
+                                        'title': title,
+                                        'file_url': file_url,
+                                        'status': 'pending_enrichment'
+                                    }
+                                )
+                                logger.audit("media_item_created", str(media_item_id), context={
+                                    'filename': filename,
+                                    'title': title,
+                                    'file_url': file_url
+                                })
+                                
+                                # Try to publish message to queue for next stage (enrichment)
+                                message = str(media_item_id)
+                                if rabbitmq_client.publish_message('enrichment_jobs', message):
+                                    logger.info(
+                                        "Message published to enrichment queue",
+                                        context={
+                                            'media_item_id': media_item_id,
+                                            'queue': 'enrichment_jobs'
+                                        }
+                                    )
+                                else:
+                                    logger.warning(
+                                        "Failed to publish message to enrichment queue - RabbitMQ not available",
+                                        context={'media_item_id': media_item_id}
+                                    )
+                            else:
+                                logger.info("Media item already exists in database", 
+                                          context={'filename': filename, 'file_url': file_url})
+                    except Exception as db_error:
+                        logger.error("Failed to insert media item into database",
+                                   error=db_error,
+                                   context={'filename': filename, 'file_url': file_url})
+                    finally:
+                        conn.close()
+                
                 logger.info(
                     "File uploaded successfully via StorageManager",
                     context={
@@ -143,7 +207,7 @@ def upload_file():
                     'storage_url': file_url,
                     'storage_mode': storage_manager.storage_mode
                 })
-                success_count += 1
+                success_count += 1 
                 
             except Exception as e:
                 logger.error(
@@ -191,6 +255,80 @@ def upload_file():
 
     return jsonify(message=f"Todos os {success_count} arquivos foram enviados com sucesso!"), 200
 
+
+@app.route('/process-pending', methods=['POST'])
+def process_pending():
+    """Manually trigger processing of pending media items"""
+    logger.audit("manual_processing_triggered", "media_items", context={'remote_addr': request.remote_addr})
+    
+    conn = get_db_connection()
+    if not conn:
+        return jsonify(error="Erro de conexão com banco de dados"), 500
+    
+    try:
+        with conn.cursor() as cur:
+            # Get pending enrichment items
+            cur.execute("""
+                SELECT id, title FROM media_items 
+                WHERE status = 'pending_enrichment' 
+                ORDER BY created_at ASC 
+                LIMIT 10
+            """)
+            pending_items = cur.fetchall()
+            
+            processed_count = 0
+            for item in pending_items:
+                media_item_id = item['id']
+                if rabbitmq_client.publish_message('enrichment_jobs', str(media_item_id)):
+                    processed_count += 1
+                    logger.info("Manually triggered enrichment job", 
+                              context={'media_item_id': media_item_id})
+            
+            return jsonify(
+                message=f"Processamento iniciado para {processed_count} itens",
+                processed_count=processed_count,
+                total_pending=len(pending_items)
+            ), 200
+            
+    except Exception as e:
+        logger.error("Failed to process pending items", error=e, severity="operational")
+        return jsonify(error="Erro ao processar itens pendentes"), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/status')
+def status():
+    """Get system status"""
+    conn = get_db_connection()
+    status_info = {
+        'database': 'connected' if conn else 'disconnected',
+        'rabbitmq': 'unknown',
+        'storage': storage_manager.get_storage_info()
+    }
+    
+    if conn:
+        try:
+            with conn.cursor() as cur:
+                # Get media items count by status
+                cur.execute("""
+                    SELECT status, COUNT(*) as count 
+                    FROM media_items 
+                    GROUP BY status
+                """)
+                status_counts = {row['status']: row['count'] for row in cur.fetchall()}
+                status_info['media_items'] = status_counts
+        except Exception as e:
+            logger.error("Failed to get media items status", error=e)
+            status_info['media_items'] = {'error': str(e)}
+        finally:
+            conn.close()
+    
+    # Test RabbitMQ
+    test_result = rabbitmq_client.publish_message('test_queue', 'test_message')
+    status_info['rabbitmq'] = 'connected' if test_result else 'disconnected'
+    
+    return jsonify(status_info)
 
 @app.route('/scheduling', methods=['GET', 'POST'])
 def scheduling():

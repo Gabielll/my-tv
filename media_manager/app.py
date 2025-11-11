@@ -146,20 +146,21 @@ def media_manager_worker():
     Main worker function that runs the media manager logic.
     This function runs in a background thread within the web service.
     """
-    global observer, logger
+    global observer, logger, STAGING_DIR
     
     # Get logger instance
     logger = get_logger('media-manager')
     
     # Ensure staging directory exists
-    if not os.path.exists(STAGING_DIR):
-        logger.info(f"Staging directory '{STAGING_DIR}' does not exist. Creating...")
+    staging_dir = STAGING_DIR  # Use local variable first
+    if not os.path.exists(staging_dir):
+        logger.info(f"Staging directory '{staging_dir}' does not exist. Creating...")
         try:
-            os.makedirs(STAGING_DIR, exist_ok=True)
-            logger.info(f"Successfully created staging directory: {STAGING_DIR}")
+            os.makedirs(staging_dir, exist_ok=True)
+            logger.info(f"Successfully created staging directory: {staging_dir}")
         except PermissionError as e:
             logger.error(
-                f"Permission denied creating staging directory: {STAGING_DIR}",
+                f"Permission denied creating staging directory: {staging_dir}",
                 error=e,
                 severity="critical"
             )
@@ -169,9 +170,9 @@ def media_manager_worker():
             try:
                 os.makedirs(fallback_dir, exist_ok=True)
                 # Update the global STAGING_DIR
-                global STAGING_DIR
                 STAGING_DIR = fallback_dir
-                logger.info(f"Successfully created fallback staging directory: {STAGING_DIR}")
+                staging_dir = fallback_dir
+                logger.info(f"Successfully created fallback staging directory: {staging_dir}")
             except Exception as fallback_error:
                 logger.error(
                     "Failed to create fallback staging directory",
@@ -181,18 +182,18 @@ def media_manager_worker():
                 raise
         except Exception as e:
             logger.error(
-                f"Unexpected error creating staging directory: {STAGING_DIR}",
+                f"Unexpected error creating staging directory: {staging_dir}",
                 error=e,
                 severity="critical"
             )
             raise
 
-    logger.info(f"Monitoring directory: {STAGING_DIR}")
+    logger.info(f"Monitoring directory: {staging_dir}")
 
     # Set up file system observer
     event_handler = NewFileHandler()
     observer = Observer()
-    observer.schedule(event_handler, STAGING_DIR, recursive=True)
+    observer.schedule(event_handler, staging_dir, recursive=True)
 
     # Start monitoring
     observer.start()
