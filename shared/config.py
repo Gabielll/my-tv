@@ -1,6 +1,9 @@
 import os
 from typing import Dict, Any, Optional
 
+# 🧪 MODO DE TESTE - REMOVER EM PRODUÇÃO
+ENABLE_RABBITMQ_TEST_MODE = True
+
 class Config:
     """Centralized configuration management for all services"""
     
@@ -18,8 +21,27 @@ class Config:
         }
     
     @classmethod
+    def is_rabbitmq_test_mode(cls) -> bool:
+        """Check if RabbitMQ test mode is enabled"""
+        return os.getenv('RABBITMQ_TEST_MODE', 'false').lower() == 'true' or ENABLE_RABBITMQ_TEST_MODE
+    
+    @classmethod
     def get_rabbitmq_config(cls) -> Dict[str, Any]:
-        """Get RabbitMQ configuration from environment variables"""
+        """Get RabbitMQ configuration with test mode support"""
+        
+        # 🧪 Credenciais hardcoded para teste
+        if cls.is_rabbitmq_test_mode():
+            return {
+                'host': 'jaragua.lmq.cloudamqp.com',
+                'port': 5672,
+                'username': 'bgepvloi',
+                'password': 'alfnh4BZ5O6TJCrrbfDXtrLLgifzIh01',
+                'virtual_host': 'bgepvloi',
+                'connection_timeout': 10,
+                'heartbeat': 600
+            }
+        
+        # Configuração normal via environment variables
         return {
             'host': os.getenv('RABBITMQ_HOST', 'localhost'),
             'port': int(os.getenv('RABBITMQ_PORT', '5672')),

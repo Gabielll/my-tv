@@ -11,6 +11,13 @@ def get_rabbitmq_connection():
     """
     config = Config.get_rabbitmq_config()
     
+    # 🧪 Log test mode warning
+    if Config.is_rabbitmq_test_mode():
+        logging.warning("🧪 RABBITMQ TEST MODE ATIVO - Usando credenciais hardcoded para teste")
+        logging.info(f"Conectando ao RabbitMQ de teste: {config['host']} (usuário: {config['username']})")
+    else:
+        logging.info(f"Conectando ao RabbitMQ: {config['host']} (usuário: {config['username']})")
+    
     # Check if RabbitMQ is properly configured
     if not config['host'] or config['host'] == 'localhost':
         logging.warning("RabbitMQ host not configured or using localhost. Skipping connection.")
@@ -34,18 +41,28 @@ def get_rabbitmq_connection():
             )
             
             connection = pika.BlockingConnection(parameters)
-            logging.info("Conexão com RabbitMQ estabelecida com sucesso.")
+            
+            # Enhanced success logging
+            mode_indicator = "🧪 TESTE" if Config.is_rabbitmq_test_mode() else "PRODUÇÃO"
+            logging.info(f"✅ Conexão RabbitMQ estabelecida com sucesso [{mode_indicator}] - Host: {config['host']}")
             return connection
+            
         except (pika.exceptions.AMQPConnectionError, pika.exceptions.ProbableAuthenticationError) as e:
-            logging.warning(f"Não foi possível conectar ao RabbitMQ (tentativa {attempt + 1}/{max_retries}): {e}")
+            mode_context = "modo de teste" if Config.is_rabbitmq_test_mode() else "modo de produção"
+            logging.warning(f"Não foi possível conectar ao RabbitMQ em {mode_context} (tentativa {attempt + 1}/{max_retries}): {e}")
             if attempt == max_retries - 1:
-                logging.error("Falha de autenticação no RabbitMQ. Verifique as credenciais nas variáveis de ambiente.")
+                if Config.is_rabbitmq_test_mode():
+                    logging.error("🧪 Falha de autenticação no RabbitMQ em modo de teste. Verifique as credenciais hardcoded.")
+                else:
+                    logging.error("Falha de autenticação no RabbitMQ. Verifique as credenciais nas variáveis de ambiente.")
             time.sleep(retry_delay)
         except Exception as e:
-            logging.error(f"Erro inesperado ao conectar ao RabbitMQ (tentativa {attempt + 1}/{max_retries}): {e}")
+            mode_context = "modo de teste" if Config.is_rabbitmq_test_mode() else "modo de produção"
+            logging.error(f"Erro inesperado ao conectar ao RabbitMQ em {mode_context} (tentativa {attempt + 1}/{max_retries}): {e}")
             time.sleep(retry_delay)
     
-    logging.error("Falha ao conectar ao RabbitMQ após múltiplas tentativas.")
+    mode_indicator = "🧪 TESTE" if Config.is_rabbitmq_test_mode() else "PRODUÇÃO"
+    logging.error(f"❌ Falha ao conectar ao RabbitMQ após múltiplas tentativas [{mode_indicator}]")
     return None
 
 def publish_message(queue_name, message):
