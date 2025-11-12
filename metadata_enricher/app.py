@@ -26,9 +26,9 @@ from shared import rabbitmq_client
 # --- Configuration ---
 service_config = Config.get_service_config()
 
-# API Configuration
-TMDB_API_KEY = os.getenv('TMDB_API_KEY')
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+# API Configuration - HARDCODED FOR TESTING
+TMDB_API_KEY = "68029a904a7c65c638854ebf492c4270"
+GEMINI_API_KEY = "AIzaSyBk-d-d2rqvfidNWO-HCJG6e_QiTs4ymP0"
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
 
